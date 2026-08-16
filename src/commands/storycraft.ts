@@ -249,7 +249,7 @@ export async function initStoryCraft(
 	);
 	console.log("");
 	console.log(
-		"Next: copy .env.storycraft.example to .env and set your Jira/Confluence values."
+		"Next: copy .env.storycraft.example to .env and set your Jira/Confluence/AI values."
 	);
 	console.log("");
 }
@@ -550,7 +550,8 @@ export async function generateStories():
 
 	const provider =
 		createAIProvider(
-			config.ai.provider
+			config.ai.provider,
+			config.ai.mode
 		);
 
 	const generationResult =
@@ -774,14 +775,60 @@ export async function startStoryCraft():
 
 	const provider =
 		createAIProvider(
-			config.ai.provider
+			config.ai.provider,
+			config.ai.mode
 		);
 
-	const generationResult =
-		await provider.generateStories({
-			context,
-			hld
-		});
+	let generationResult: StoryGenerationResult;
+
+	try {
+		generationResult =
+			await provider.generateStories({
+				context,
+				hld
+			});
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			error.message.includes("ANTHROPIC_API_KEY environment variable is not set.")
+		) {
+			throw new Error(
+				[
+					"AI provider is configured as direct Claude, but ANTHROPIC_API_KEY is missing.",
+					"",
+					"Set these variables in your .env file and re-run:",
+					"export ANTHROPIC_API_KEY=\"your-anthropic-key\"",
+					"export ANTHROPIC_MODEL=\"claude-3-5-sonnet-latest\"",
+					"",
+					"Or switch to VS Code handoff mode in .sdlc/config.yaml:",
+					"ai:",
+					"  provider: \"vscode\"",
+					"  mode: \"vscode\""
+				].join("\n")
+			);
+		}
+
+		if (
+			error instanceof Error &&
+			error.message.includes("ANTHROPIC_MODEL environment variable is not set.")
+		) {
+			throw new Error(
+				[
+					"AI provider is configured as direct Claude, but ANTHROPIC_MODEL is missing.",
+					"",
+					"Set this variable in your .env file and re-run:",
+					"export ANTHROPIC_MODEL=\"claude-3-5-sonnet-latest\"",
+					"",
+					"You can also use VS Code handoff mode in .sdlc/config.yaml:",
+					"ai:",
+					"  provider: \"vscode\"",
+					"  mode: \"vscode\""
+				].join("\n")
+			);
+		}
+
+		throw error;
+	}
 
 	const document =
 		toGenerationDocument(
@@ -1716,6 +1763,10 @@ export CONFLUENCE_BASE_URL="https://your-company.atlassian.net"
 export CONFLUENCE_EMAIL="your-email@company.com"
 export CONFLUENCE_API_TOKEN="your-confluence-api-token"
 export CONFLUENCE_HLD_PAGE_ID="your-confluence-hld-page-id"
+
+# AI (required when using direct Claude mode)
+export ANTHROPIC_API_KEY="your-anthropic-api-key"
+export ANTHROPIC_MODEL="claude-3-5-sonnet-latest"
 `;
 }
 

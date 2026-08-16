@@ -35,8 +35,8 @@ export function validateContext(
   }
 
   if (!hasProblem && !hasSolution) {
-    errors.push(
-      "No usable project context found. Provide problem or solution context (non-placeholder)."
+    warnings.push(
+      "Problem and solution context are placeholders. StoryCraft will continue using discovered project files and HLD."
     );
   }
 
