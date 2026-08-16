@@ -844,11 +844,51 @@ export async function startStoryCraft():
 			console.log("");
 			console.log(error.message);
 			console.log("");
-			console.log(
-				"Workflow paused. Generate real AI output in Copilot Chat and save it to .sdlc/storycraft/ai-response.json, then run 'sdlc storycraft start' again."
-			);
-			console.log("");
-			return;
+
+			while (true) {
+				const action =
+					await input({
+						message:
+							"After running /sdlc-storycraft-generate, press Enter to continue (or type q to stop):",
+						default:
+							""
+					});
+
+				if (
+					action.trim().toLowerCase() === "q"
+				) {
+					console.log("");
+					console.log(
+						"Workflow paused. Continue later by running 'sdlc storycraft start'."
+					);
+					console.log("");
+					return;
+				}
+
+				try {
+					generationResult =
+						await provider.generateStories({
+							context,
+							hld
+						});
+
+					break;
+				} catch (retryError) {
+					if (
+						retryError instanceof Error &&
+						retryError.message.includes("VS Code AI handoff created.")
+					) {
+						console.log("");
+						console.log(
+							"AI response not found yet at .sdlc/storycraft/ai-response.json."
+						);
+						console.log("");
+						continue;
+					}
+
+					throw retryError;
+				}
+			}
 		} else {
 			throw error;
 		}
