@@ -242,6 +242,9 @@ export async function initStoryCraft(
 		".github/prompts/sdlc-start-workflow.prompt.md"
 	);
 	console.log(
+		".github/prompts/sdlc-storycraft-generate.prompt.md"
+	);
+	console.log(
 		".github/copilot-instructions.md"
 	);
 	console.log(
@@ -596,6 +599,9 @@ export async function runStoryCraft():
 
 export async function startStoryCraft():
 	Promise<void> {
+	createCopilotFiles(
+		process.cwd()
+	);
 
 	console.log("");
 	console.log(
@@ -1703,6 +1709,20 @@ function createCopilotFiles(
 			"utf8"
 		);
 	}
+
+	const aiPromptPath =
+		path.join(
+			promptsDirectory,
+			"sdlc-storycraft-generate.prompt.md"
+		);
+
+	if (!fs.existsSync(aiPromptPath)) {
+		fs.writeFileSync(
+			aiPromptPath,
+			createAIGenerationSlashPromptFile(),
+			"utf8"
+		);
+	}
 }
 
 
@@ -1740,6 +1760,27 @@ Steps:
 2. Follow the interactive prompts.
 3. Do not bypass human approval before Jira creation.
 4. If creation is rejected, stop without creating Jira items.
+`;
+}
+
+
+function createAIGenerationSlashPromptFile():
+	string {
+
+	return `---
+mode: agent
+description: Generate StoryCraft AI JSON and save it
+---
+
+Run the StoryCraft AI handoff task for this project.
+
+Steps:
+
+1. Read .sdlc/storycraft/ai-prompt.md
+2. Generate the StoryCraft JSON response from real project context/HLD.
+3. Save ONLY JSON to .sdlc/storycraft/ai-response.json
+4. Do not include markdown fences.
+5. Confirm when the file is saved.
 `;
 }
 
