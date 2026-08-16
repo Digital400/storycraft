@@ -1,6 +1,6 @@
 {
   "name": "@digital400/storycraft",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Digital400 (Pvt) Ltd SDLC StoryCraft CLI",
   "main": "index.js",
   "scripts": {
