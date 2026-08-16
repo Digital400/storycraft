@@ -16,37 +16,58 @@ import {
   generateStories,
   runStoryCraft,
   runStoryCraftWorkflow,
-  reviewStories
+  reviewStories,
+  startStoryCraft,
+  continueStoryCraft
 } from "./commands/storycraft.js";
 
-import { loadContext } from "./context/context-loader.js";
-import { validateContext } from "./validation/context-validator.js";
-import { validateReview } from "./validation/review-validator.js";
-import { createJiraProvider } from "./jira/jira-provider-factory.js";
+import {
+  loadContext
+} from "./context/context-loader.js";
+
+import {
+  validateContext
+} from "./validation/context-validator.js";
+
+import {
+  validateReview
+} from "./validation/review-validator.js";
+
+import {
+  createJiraProvider
+} from "./jira/jira-provider-factory.js";
 
 import {
   select,
-  input,
-  confirm
+  input
 } from "@inquirer/prompts";
 
 import fs from "node:fs";
 import path from "node:path";
 
+
 const program = new Command();
+
 
 program
   .name("sdlc")
-  .description("Company SDLC automation CLI")
+  .description(
+    "Digital400 Company SDLC automation CLI"
+  )
   .version("1.0.0");
 
-const storycraft = program
-  .command("storycraft")
-  .description("Create and manage software stories");
 
-// --------------------------------------------------
+const storycraft =
+  program
+    .command("storycraft")
+    .description(
+      "Create and manage software delivery workflows"
+    );
+
+
+// ==================================================
 // INIT
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("init")
@@ -54,12 +75,62 @@ storycraft
     "Initialize StoryCraft in the current project"
   )
   .action(async () => {
-    await initStoryCraft();
+    try {
+      await initStoryCraft();
+    } catch (error) {
+      printError(
+        error,
+        "StoryCraft initialization failed."
+      );
+    }
   });
 
-// --------------------------------------------------
+
+// ==================================================
+// START
+// ==================================================
+
+storycraft
+  .command("start")
+  .description(
+    "Start the complete StoryCraft developer workflow"
+  )
+  .action(async () => {
+    try {
+      await startStoryCraft();
+    } catch (error) {
+      printError(
+        error,
+        "StoryCraft workflow failed."
+      );
+    }
+  });
+
+
+// ==================================================
+// CONTINUE
+// ==================================================
+
+storycraft
+  .command("continue")
+  .description(
+    "Continue StoryCraft after VS Code AI execution"
+  )
+  .action(async () => {
+    try {
+      await continueStoryCraft();
+    } catch (error) {
+      printError(
+        error,
+        "StoryCraft continuation failed."
+      );
+    }
+  });
+
+
+// ==================================================
 // CONFIG
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("config")
@@ -67,28 +138,40 @@ storycraft
     "Show StoryCraft configuration"
   )
   .action(() => {
-    const config = loadConfig();
+    try {
+      const config =
+        loadConfig();
 
-    console.log("");
-    console.log(
-      "StoryCraft Configuration"
-    );
-    console.log(
-      "------------------------"
-    );
-    console.log(
-      JSON.stringify(
-        config,
-        null,
-        2
-      )
-    );
-    console.log("");
+      console.log("");
+      console.log(
+        "StoryCraft Configuration"
+      );
+      console.log(
+        "------------------------"
+      );
+
+      console.log(
+        JSON.stringify(
+          config,
+          null,
+          2
+        )
+      );
+
+      console.log("");
+
+    } catch (error) {
+      printError(
+        error,
+        "Failed to load StoryCraft configuration."
+      );
+    }
   });
 
-// --------------------------------------------------
+
+// ==================================================
 // DOCTOR
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("doctor")
@@ -96,12 +179,20 @@ storycraft
     "Check StoryCraft project configuration"
   )
   .action(() => {
-    runDoctor();
+    try {
+      runDoctor();
+    } catch (error) {
+      printError(
+        error,
+        "StoryCraft doctor failed."
+      );
+    }
   });
 
-// --------------------------------------------------
+
+// ==================================================
 // CREATE
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("create")
@@ -109,12 +200,20 @@ storycraft
     "Create the StoryCraft stories file"
   )
   .action(() => {
-    createStoriesFile();
+    try {
+      createStoriesFile();
+    } catch (error) {
+      printError(
+        error,
+        "Failed to create stories file."
+      );
+    }
   });
 
-// --------------------------------------------------
+
+// ==================================================
 // VALIDATE STORIES
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("validate")
@@ -122,12 +221,20 @@ storycraft
     "Validate StoryCraft stories"
   )
   .action(() => {
-    validateStoriesFile();
+    try {
+      validateStoriesFile();
+    } catch (error) {
+      printError(
+        error,
+        "Story validation failed."
+      );
+    }
   });
 
-// --------------------------------------------------
+
+// ==================================================
 // CONTEXT
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("context")
@@ -135,7 +242,9 @@ storycraft
     "Show the StoryCraft context"
   )
   .action(() => {
+
     try {
+
       const context =
         loadContext();
 
@@ -146,6 +255,7 @@ storycraft
       console.log(
         "------------------"
       );
+
       console.log(
         JSON.stringify(
           context,
@@ -153,29 +263,22 @@ storycraft
           2
         )
       );
+
       console.log("");
+
     } catch (error) {
-      console.error("");
 
-      if (error instanceof Error) {
-        console.error(
-          error.message
-        );
-      } else {
-        console.error(
-          "Failed to load StoryCraft context."
-        );
-      }
-
-      console.error("");
-
-      process.exitCode = 1;
+      printError(
+        error,
+        "Failed to load StoryCraft context."
+      );
     }
   });
 
-// --------------------------------------------------
+
+// ==================================================
 // VALIDATE CONTEXT
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("validate-context")
@@ -183,7 +286,9 @@ storycraft
     "Validate StoryCraft context"
   )
   .action(() => {
+
     try {
+
       const context =
         loadContext();
 
@@ -200,22 +305,30 @@ storycraft
         "-----------------"
       );
 
-      if (result.passed) {
+      if (
+        result.passed
+      ) {
+
         console.log(
           "✓ Problem context"
         );
+
         console.log(
           "✓ Solution context"
         );
+
         console.log(
           "✓ HLD context"
         );
+
         console.log("");
 
         console.log(
           "Context validation PASSED."
         );
+
       } else {
+
         console.log(
           "Context validation FAILED."
         );
@@ -226,6 +339,7 @@ storycraft
           const error
           of result.errors
         ) {
+
           console.log(
             `✗ ${error}`
           );
@@ -233,28 +347,20 @@ storycraft
       }
 
       console.log("");
+
     } catch (error) {
-      console.error("");
 
-      if (error instanceof Error) {
-        console.error(
-          error.message
-        );
-      } else {
-        console.error(
-          "Failed to validate context."
-        );
-      }
-
-      console.error("");
-
-      process.exitCode = 1;
+      printError(
+        error,
+        "Failed to validate context."
+      );
     }
   });
 
-// --------------------------------------------------
+
+// ==================================================
 // GENERATE
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("generate")
@@ -262,25 +368,49 @@ storycraft
     "Generate stories from the StoryCraft context"
   )
   .action(async () => {
-    await generateStories();
+
+    try {
+
+      await generateStories();
+
+    } catch (error) {
+
+      printError(
+        error,
+        "Story generation failed."
+      );
+    }
   });
 
-// --------------------------------------------------
+
+// ==================================================
 // RUN
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("run")
   .description(
-    "Run the complete StoryCraft workflow"
+    "Run the StoryCraft generation workflow"
   )
   .action(async () => {
-    await runStoryCraft();
+
+    try {
+
+      await runStoryCraft();
+
+    } catch (error) {
+
+      printError(
+        error,
+        "StoryCraft run failed."
+      );
+    }
   });
 
-// --------------------------------------------------
+
+// ==================================================
 // WORKFLOW
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("workflow")
@@ -288,12 +418,24 @@ storycraft
     "Run the developer-driven StoryCraft workflow"
   )
   .action(async () => {
-    await runStoryCraftWorkflow();
+
+    try {
+
+      await runStoryCraftWorkflow();
+
+    } catch (error) {
+
+      printError(
+        error,
+        "StoryCraft workflow failed."
+      );
+    }
   });
 
-// --------------------------------------------------
+
+// ==================================================
 // REVIEW
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("review")
@@ -301,12 +443,24 @@ storycraft
     "Review generated StoryCraft stories"
   )
   .action(async () => {
-    await reviewStories();
+
+    try {
+
+      await reviewStories();
+
+    } catch (error) {
+
+      printError(
+        error,
+        "Story review failed."
+      );
+    }
   });
 
-// --------------------------------------------------
+
+// ==================================================
 // REVIEW STATUS
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("review-status")
@@ -314,37 +468,56 @@ storycraft
     "Check human review status"
   )
   .action(() => {
-    const result =
-      validateReview();
 
-    console.log("");
-    console.log(
-      "Human Review Status"
-    );
-    console.log(
-      "-------------------"
-    );
+    try {
 
-    if (result.approved) {
+      const result =
+        validateReview();
+
+      console.log("");
+
       console.log(
-        "✓ APPROVED"
+        "Human Review Status"
       );
-    } else {
+
       console.log(
-        "✗ NOT APPROVED"
+        "-------------------"
+      );
+
+      if (
+        result.approved
+      ) {
+
+        console.log(
+          "✓ APPROVED"
+        );
+
+      } else {
+
+        console.log(
+          "✗ NOT APPROVED"
+        );
+      }
+
+      console.log(
+        result.message
+      );
+
+      console.log("");
+
+    } catch (error) {
+
+      printError(
+        error,
+        "Failed to check review status."
       );
     }
-
-    console.log(
-      result.message
-    );
-
-    console.log("");
   });
 
-// --------------------------------------------------
+
+// ==================================================
 // JIRA PROJECTS
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("jira-projects")
@@ -352,16 +525,22 @@ storycraft
     "List available Jira projects"
   )
   .action(async () => {
+
     try {
+
       const config =
         loadConfig();
 
-      if (!config.jira.enabled) {
+      if (
+        !config.jira.enabled
+      ) {
+
         console.log("");
         console.log(
           "Jira integration is disabled."
         );
         console.log("");
+
         return;
       }
 
@@ -374,16 +553,23 @@ storycraft
         await jira.listProjects();
 
       console.log("");
+
       console.log(
         "Available Jira Projects"
       );
+
       console.log(
         "-----------------------"
       );
+
       console.log("");
 
       projects.forEach(
-        (project, index) => {
+        (
+          project,
+          index
+        ) => {
+
           console.log(
             `${index + 1}. ${project.key} - ${project.name}`
           );
@@ -391,28 +577,20 @@ storycraft
       );
 
       console.log("");
+
     } catch (error) {
-      console.error("");
 
-      if (error instanceof Error) {
-        console.error(
-          error.message
-        );
-      } else {
-        console.error(
-          "Failed to load Jira projects."
-        );
-      }
-
-      console.error("");
-
-      process.exitCode = 1;
+      printError(
+        error,
+        "Failed to load Jira projects."
+      );
     }
   });
 
-// --------------------------------------------------
+
+// ==================================================
 // JIRA SETUP
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("jira-setup")
@@ -420,16 +598,22 @@ storycraft
     "Select or create a Jira project"
   )
   .action(async () => {
+
     try {
+
       const config =
         loadConfig();
 
-      if (!config.jira.enabled) {
+      if (
+        !config.jira.enabled
+      ) {
+
         console.log("");
         console.log(
           "Jira integration is disabled."
         );
         console.log("");
+
         return;
       }
 
@@ -461,17 +645,20 @@ storycraft
       if (
         action === "existing"
       ) {
+
         const projects =
           await jira.listProjects();
 
         if (
           projects.length === 0
         ) {
+
           console.log("");
           console.log(
             "No Jira projects are available."
           );
           console.log("");
+
           return;
         }
 
@@ -481,7 +668,9 @@ storycraft
               "Select Jira project:",
             choices:
               projects.map(
-                (project) => ({
+                (
+                  project
+                ) => ({
                   name:
                     `${project.key} - ${project.name}`,
                   value:
@@ -494,19 +683,26 @@ storycraft
           selectedProject.key;
 
         console.log("");
+
         console.log(
           `Selected Jira project: ${selectedProject.key}`
         );
+
       } else {
+
         const key =
           await input({
             message:
               "New Jira project key:",
             validate:
-              (value) => {
+              (
+                value
+              ) => {
+
                 if (
                   !value.trim()
                 ) {
+
                   return (
                     "Project key is required."
                   );
@@ -521,10 +717,14 @@ storycraft
             message:
               "New Jira project name:",
             validate:
-              (value) => {
+              (
+                value
+              ) => {
+
                 if (
                   !value.trim()
                 ) {
+
                   return (
                     "Project name is required."
                   );
@@ -546,6 +746,7 @@ storycraft
           project.key;
 
         console.log("");
+
         console.log(
           `Created Jira project: ${project.key}`
         );
@@ -556,32 +757,26 @@ storycraft
       );
 
       console.log("");
+
       console.log(
         "Jira project configuration saved."
       );
+
       console.log("");
+
     } catch (error) {
-      console.error("");
 
-      if (error instanceof Error) {
-        console.error(
-          error.message
-        );
-      } else {
-        console.error(
-          "Jira project setup failed."
-        );
-      }
-
-      console.error("");
-
-      process.exitCode = 1;
+      printError(
+        error,
+        "Jira project setup failed."
+      );
     }
   });
 
-// --------------------------------------------------
+
+// ==================================================
 // JIRA CREATE
-// --------------------------------------------------
+// ==================================================
 
 storycraft
   .command("jira-create")
@@ -589,7 +784,9 @@ storycraft
     "Create approved stories in Jira"
   )
   .action(async () => {
+
     try {
+
       console.log("");
       console.log(
         "StoryCraft Jira Creation"
@@ -605,6 +802,7 @@ storycraft
       if (
         !review.approved
       ) {
+
         console.log(
           "✗ Jira creation blocked."
         );
@@ -624,9 +822,11 @@ storycraft
       if (
         !config.jira.enabled
       ) {
+
         console.log(
           "Jira integration is disabled."
         );
+
         console.log("");
 
         return;
@@ -635,6 +835,7 @@ storycraft
       if (
         !config.jira.project_key
       ) {
+
         console.log(
           "No Jira project has been configured."
         );
@@ -661,6 +862,7 @@ storycraft
           storiesPath
         )
       ) {
+
         console.log(
           "stories.json not found."
         );
@@ -710,6 +912,7 @@ storycraft
           [] as Array<{
             storyCraftEpicId:
             string;
+
             jiraEpicKey:
             string;
           }>,
@@ -718,6 +921,7 @@ storycraft
           [] as Array<{
             storyCraftStoryId:
             string;
+
             jiraStoryKey:
             string;
           }>
@@ -734,6 +938,7 @@ storycraft
           resultPath
         )
       ) {
+
         console.log(
           "Jira creation has already been performed for this project."
         );
@@ -757,6 +962,7 @@ storycraft
         const epic
         of epics
       ) {
+
         const createdEpic =
           await jira.createEpic(
             projectKey,
@@ -792,6 +998,7 @@ storycraft
           const story
           of epicStories
         ) {
+
           const createdStory =
             await jira.createStory(
               projectKey,
@@ -824,34 +1031,92 @@ storycraft
         "utf8"
       );
 
+      console.log("");
+
       console.log(
         "✓ Jira result saved: .sdlc/storycraft/jira-result.json"
       );
 
       console.log("");
+
       console.log(
         "Jira creation completed successfully."
       );
-      console.log("");
-    } catch (error) {
-      console.error("");
 
-      console.error(
+      console.log("");
+
+    } catch (error) {
+
+      printError(
+        error,
         "Jira creation failed."
       );
-
-      if (
-        error instanceof Error
-      ) {
-        console.error(
-          error.message
-        );
-      }
-
-      console.error("");
-
-      process.exitCode = 1;
     }
   });
+
+
+// ==================================================
+// GLOBAL ERROR HANDLING
+// ==================================================
+
+program
+  .showSuggestionAfterError();
+
+
+program
+  .configureOutput({
+    outputError:
+      (
+        str,
+        write
+      ) => {
+        write(
+          `\n${str}\n`
+        );
+      }
+  });
+
+
+// ==================================================
+// ERROR HELPER
+// ==================================================
+
+function printError(
+  error: unknown,
+  fallbackMessage: string
+): void {
+
+  console.error("");
+
+  console.error(
+    fallbackMessage
+  );
+
+  console.error("");
+
+  if (
+    error instanceof Error
+  ) {
+
+    console.error(
+      error.message
+    );
+
+  } else {
+
+    console.error(
+      String(error)
+    );
+  }
+
+  console.error("");
+
+  process.exitCode = 1;
+}
+
+
+// ==================================================
+// START CLI
+// ==================================================
 
 program.parse();

@@ -39,14 +39,20 @@ export interface StoryCraftConfig {
   };
 }
 
-export function loadConfig(): StoryCraftConfig {
-  const configPath = path.join(
-    process.cwd(),
-    ".sdlc",
-    "config.yaml"
-  );
+export function loadConfig():
+  StoryCraftConfig {
+  const configPath =
+    path.join(
+      process.cwd(),
+      ".sdlc",
+      "config.yaml"
+    );
 
-  if (!fs.existsSync(configPath)) {
+  if (
+    !fs.existsSync(
+      configPath
+    )
+  ) {
     throw new Error(
       "StoryCraft configuration not found. Run 'sdlc storycraft init' first."
     );
@@ -76,8 +82,10 @@ export function loadConfig(): StoryCraftConfig {
   }
 
   if (
-    config.ai.mode !== "direct" &&
-    config.ai.mode !== "vscode"
+    config.ai.mode !==
+    "direct" &&
+    config.ai.mode !==
+    "vscode"
   ) {
     throw new Error(
       `Unsupported AI execution mode: ${config.ai.mode}`
@@ -90,14 +98,17 @@ export function loadConfig(): StoryCraftConfig {
 export function saveConfig(
   config: StoryCraftConfig
 ): void {
-  const configPath = path.join(
-    process.cwd(),
-    ".sdlc",
-    "config.yaml"
-  );
+  const configPath =
+    path.join(
+      process.cwd(),
+      ".sdlc",
+      "config.yaml"
+    );
 
   const yamlContent =
-    YAML.stringify(config);
+    YAML.stringify(
+      config
+    );
 
   fs.writeFileSync(
     configPath,
