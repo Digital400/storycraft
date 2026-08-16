@@ -4,7 +4,7 @@ This repository publishes StoryCraft to npmjs so developers can install with one
 
 ## Package name
 
-- `@digital400/storycraft`
+- `storycraft-sdlc`
 
 ## Publish options
 
@@ -29,7 +29,7 @@ npm publish
 1. One command install in any project folder
 
 ```bash
-npx @digital400/storycraft install
+npx storycraft-sdlc install
 ```
 
 2. Start workflow in VS Code chat
@@ -41,7 +41,7 @@ npx @digital400/storycraft install
 3. Optional global install
 
 ```bash
-npm install -g @digital400/storycraft
+npm install -g storycraft-sdlc
 ```
 
 4. Verify

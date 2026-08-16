@@ -1,5 +1,5 @@
 {
-  "name": "@digital400/storycraft",
+  "name": "storycraft-sdlc",
   "version": "1.0.1",
   "description": "Digital400 (Pvt) Ltd SDLC StoryCraft CLI",
   "main": "index.js",
@@ -31,6 +31,10 @@
   "bin": {
     "sdlc": "dist/index.js"
   },
+  "files": [
+    "dist/",
+    "package.json"
+  ],
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
     "access": "public"
