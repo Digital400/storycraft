@@ -2,7 +2,8 @@ import {
     JiraProvider,
     JiraProject,
     JiraEpic,
-    JiraStory
+    JiraStory,
+    JiraTask
 } from "./jira-provider.js";
 
 export class MockJiraProvider implements JiraProvider {
@@ -66,6 +67,23 @@ export class MockJiraProvider implements JiraProvider {
         return {
             id: "20001",
             key: `${projectKey}-101`,
+            title
+        };
+    }
+
+    async createTask(
+        projectKey: string,
+        storyKey: string,
+        title: string,
+        description: string
+    ): Promise<JiraTask> {
+        console.log(
+            `[Mock Jira] Creating Task in ${projectKey} under ${storyKey}: ${title}`
+        );
+
+        return {
+            id: "30001",
+            key: `${projectKey}-102`,
             title
         };
     }

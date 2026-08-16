@@ -165,13 +165,32 @@ Required JSON structure:
         "storyPoints": 5
       }
     }
+    ],
+    "tasks": [
+        {
+            "id": "TASK-001",
+            "storyId": "ST-001",
+            "title": "...",
+            "description": "...",
+            "technicalDetails": [
+                "..."
+            ],
+            "dependencies": [],
+            "estimate": {
+                "hours": 6
+            }
+        }
   ]
 }
 
 STORYCRAFT CONTEXT:
 
 ${JSON.stringify(
-        request.context,
+        {
+            problem: request.context.problem.data,
+            solution: request.context.solution.data,
+            hld: request.context.hld.data
+        },
         null,
         2
     )}
@@ -236,6 +255,7 @@ function parseStoryGenerationResult(
         parsed as {
             epics?: unknown;
             stories?: unknown;
+            tasks?: unknown;
         };
 
     if (
@@ -258,11 +278,24 @@ function parseStoryGenerationResult(
         );
     }
 
+    if (
+        !Array.isArray(
+            result.tasks
+        )
+    ) {
+        throw new Error(
+            "Claude response is missing the tasks array."
+        );
+    }
+
     return {
         epics:
             result.epics as StoryGenerationResult["epics"],
 
         stories:
-            result.stories as StoryGenerationResult["stories"]
+            result.stories as StoryGenerationResult["stories"],
+
+        tasks:
+            result.tasks as StoryGenerationResult["tasks"]
     };
 }

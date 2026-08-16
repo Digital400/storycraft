@@ -1,0 +1,24 @@
+{
+  "version": "1.0",
+  "project": "storycraft",
+  "status": "available",
+  "solution": {
+    "description": "Provide a developer-driven CLI and Copilot workflow to generate epics, stories, and tasks and optionally create them in Jira.",
+    "objectives": [
+      "Automate initial SDLC breakdown",
+      "Preserve human approval before Jira creation"
+    ],
+    "features": [
+      "Context loading",
+      "HLD loading",
+      "Jira project selection",
+      "Generation and validation"
+    ],
+    "assumptions": [
+      "Jira and HLD credentials are provided through environment variables in real usage"
+    ],
+    "risks": [
+      "Invalid context can produce weak outputs"
+    ]
+  }
+}

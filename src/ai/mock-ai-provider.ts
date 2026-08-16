@@ -6,6 +6,7 @@ import {
 
 import { Story } from "../schemas/story.js";
 import { Epic } from "../schemas/epic.js";
+import { Task } from "../schemas/task.js";
 
 export class MockAIProvider implements AIProvider {
   name = "mock";
@@ -19,10 +20,10 @@ export class MockAIProvider implements AIProvider {
     const hldSource = request.hld.source;
 
     const projectName =
-      typeof request.context.problem === "object" &&
-        request.context.problem !== null &&
-        "project" in request.context.problem
-        ? String(request.context.problem.project)
+      typeof request.context.problem.data === "object" &&
+        request.context.problem.data !== null &&
+        "project" in request.context.problem.data
+        ? String(request.context.problem.data.project)
         : "Unknown Project";
 
     const epic: Epic = {
@@ -122,9 +123,79 @@ export class MockAIProvider implements AIProvider {
       }
     ];
 
+    const tasks: Task[] = [
+      {
+        id: "TASK-001",
+        storyId: "ST-001",
+        title: "Design create-order request contract",
+        description:
+          "Define and document the request/response contract for order creation.",
+        technicalDetails: [
+          "Define payload and validation constraints.",
+          "Align error codes for invalid payloads."
+        ],
+        dependencies: [],
+        estimate: {
+          hours: 4
+        }
+      },
+      {
+        id: "TASK-002",
+        storyId: "ST-001",
+        title: "Implement POST /orders endpoint",
+        description:
+          "Implement API handler and service layer for order creation.",
+        technicalDetails: [
+          "Add controller and service methods.",
+          "Wire authentication middleware."
+        ],
+        dependencies: [
+          "TASK-001"
+        ],
+        estimate: {
+          hours: 8
+        }
+      },
+      {
+        id: "TASK-003",
+        storyId: "ST-002",
+        title: "Implement validation rules",
+        description:
+          "Add domain and input validation for product and customer data.",
+        technicalDetails: [
+          "Add reusable validation module.",
+          "Map validation failures to API responses."
+        ],
+        dependencies: [
+          "TASK-002"
+        ],
+        estimate: {
+          hours: 6
+        }
+      },
+      {
+        id: "TASK-004",
+        storyId: "ST-003",
+        title: "Persist order records",
+        description:
+          "Store validated order records and generated identifiers in the database.",
+        technicalDetails: [
+          "Create repository persistence function.",
+          "Add database transaction handling."
+        ],
+        dependencies: [
+          "TASK-003"
+        ],
+        estimate: {
+          hours: 8
+        }
+      }
+    ];
+
     return {
       epics: [epic],
-      stories
+      stories,
+      tasks
     };
   }
 }

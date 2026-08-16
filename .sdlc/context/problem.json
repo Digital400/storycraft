@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "project": "storycraft",
+  "status": "available",
+  "problem": {
+    "statement": "Engineering teams need faster, validated SDLC backlog generation from real project context.",
+    "businessImpact": "Manual backlog creation is slow and inconsistent.",
+    "stakeholders": [
+      "Engineering Lead",
+      "Product Owner"
+    ],
+    "successMetrics": [
+      "Reduced planning lead time",
+      "Improved Jira traceability"
+    ]
+  }
+}

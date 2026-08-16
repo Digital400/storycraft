@@ -115,6 +115,21 @@ The supplied Problem Discovery, Solution Discovery and HLD are the source of tru
         "storyPoints": 5
       }
     }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "storyId": "ST-001",
+      "title": "Task title",
+      "description": "Task description",
+      "technicalDetails": [
+        "Technical detail"
+      ],
+      "dependencies": [],
+      "estimate": {
+        "hours": 6
+      }
+    }
   ]
 }
 
@@ -123,7 +138,7 @@ The supplied Problem Discovery, Solution Discovery and HLD are the source of tru
 # PROBLEM DISCOVERY
 
 ${JSON.stringify(
-        request.context.problem,
+  request.context.problem.data,
         null,
         2
     )}
@@ -133,7 +148,7 @@ ${JSON.stringify(
 # SOLUTION DISCOVERY
 
 ${JSON.stringify(
-        request.context.solution,
+  request.context.solution.data,
         null,
         2
     )}

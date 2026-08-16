@@ -10,6 +10,7 @@ export function createJiraProvider(
             return new MockJiraProvider();
 
         case "jira-cloud":
+        case "jira":
             return new JiraCloudProvider();
 
         default:

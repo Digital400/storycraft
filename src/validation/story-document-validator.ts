@@ -1,6 +1,7 @@
-import { StoryDocument } from "../schemas/story-schema.js";
+import { StoryCraftGenerationDocument } from "../schemas/storycraft-generation.js";
 import { validateStory } from "./story-validator.js";
 import { STORYCRAFT_RULES } from "../rules/storycraft-rules.js";
+import { Task } from "../schemas/task.js";
 
 export interface StoryDocumentValidationResult {
     passed: boolean;
@@ -9,7 +10,7 @@ export interface StoryDocumentValidationResult {
 }
 
 export function validateStoryDocument(
-    document: StoryDocument
+    document: StoryCraftGenerationDocument
 ): StoryDocumentValidationResult {
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -42,6 +43,10 @@ export function validateStoryDocument(
         errors.push("Stories must be an array.");
     }
 
+    if (!Array.isArray(document.tasks)) {
+        errors.push("Tasks must be an array.");
+    }
+
     if (errors.length > 0) {
         return {
             passed: false,
@@ -55,6 +60,7 @@ export function validateStoryDocument(
     // ----------------------------------------
 
     const epicIds = new Set<string>();
+    const epicTitles = new Set<string>();
 
     for (const epic of document.epics) {
         if (!epic.id?.trim()) {
@@ -77,6 +83,16 @@ export function validateStoryDocument(
             errors.push(
                 `${epic.id}: Epic title is required.`
             );
+        } else {
+            const normalizedTitle = epic.title.trim().toLowerCase();
+
+            if (epicTitles.has(normalizedTitle)) {
+                errors.push(
+                    `Duplicate Epic title found: ${epic.title}`
+                );
+            }
+
+            epicTitles.add(normalizedTitle);
         }
 
         if (!epic.description?.trim()) {
@@ -97,6 +113,7 @@ export function validateStoryDocument(
     // ----------------------------------------
 
     const storyIds = new Set<string>();
+    const storyTitles = new Set<string>();
 
     for (const story of document.stories) {
         if (!story.id?.trim()) {
@@ -117,6 +134,20 @@ export function validateStoryDocument(
         }
 
         storyIds.add(story.id);
+
+        if (typeof story.title === "string") {
+            const normalizedTitle = story.title.trim().toLowerCase();
+
+            if (normalizedTitle) {
+                if (storyTitles.has(normalizedTitle)) {
+                    errors.push(
+                        `Duplicate Story title found: ${story.title}`
+                    );
+                }
+
+                storyTitles.add(normalizedTitle);
+            }
+        }
     }
 
     // ----------------------------------------
@@ -193,16 +224,29 @@ export function validateStoryDocument(
     // ----------------------------------------
 
     if (document.epics.length === 0) {
-        warnings.push(
-            "No Epics found in the story document."
+        errors.push(
+            "At least one Epic is required."
         );
     }
 
     if (document.stories.length === 0) {
-        warnings.push(
-            "No Stories found in the story document."
+        errors.push(
+            "At least one Story is required."
         );
     }
+
+    if (document.tasks.length === 0) {
+        errors.push(
+            "At least one Task is required."
+        );
+    }
+
+    validateTasks(
+        document.tasks,
+        storyIds,
+        errors,
+        warnings
+    );
 
     // ----------------------------------------
     // Final result
@@ -213,4 +257,104 @@ export function validateStoryDocument(
         errors,
         warnings
     };
+}
+
+function validateTasks(
+    tasks: Task[],
+    storyIds: Set<string>,
+    errors: string[],
+    warnings: string[]
+): void {
+    const taskIds = new Set<string>();
+    const taskTitles = new Set<string>();
+
+    for (const task of tasks) {
+        if (!task.id?.trim()) {
+            errors.push("Task ID is required.");
+            continue;
+        }
+
+        if (taskIds.has(task.id)) {
+            errors.push(
+                `Duplicate Task ID found: ${task.id}`
+            );
+        }
+
+        taskIds.add(task.id);
+
+        if (!task.storyId?.trim()) {
+            errors.push(
+                `${task.id}: Story ID is required.`
+            );
+        } else if (!storyIds.has(task.storyId)) {
+            errors.push(
+                `${task.id}: Story '${task.storyId}' does not exist.`
+            );
+        }
+
+        if (!task.title?.trim()) {
+            errors.push(
+                `${task.id}: Task title is required.`
+            );
+        } else {
+            const normalizedTitle = task.title.trim().toLowerCase();
+
+            if (taskTitles.has(normalizedTitle)) {
+                errors.push(
+                    `Duplicate Task title found: ${task.title}`
+                );
+            }
+
+            taskTitles.add(normalizedTitle);
+        }
+
+        if (!task.description?.trim()) {
+            errors.push(
+                `${task.id}: Task description is required.`
+            );
+        }
+
+        if (!Array.isArray(task.technicalDetails) || task.technicalDetails.length === 0) {
+            errors.push(
+                `${task.id}: Task technical details are required.`
+            );
+        }
+
+        if (!Array.isArray(task.dependencies)) {
+            errors.push(
+                `${task.id}: Task dependencies must be an array.`
+            );
+        }
+
+        if (
+            !task.estimate ||
+            typeof task.estimate.hours !== "number" ||
+            !Number.isFinite(task.estimate.hours) ||
+            task.estimate.hours <= 0
+        ) {
+            errors.push(
+                `${task.id}: Task estimate.hours must be a positive number.`
+            );
+        }
+    }
+
+    for (const task of tasks) {
+        if (!Array.isArray(task.dependencies)) {
+            continue;
+        }
+
+        for (const dependency of task.dependencies) {
+            if (!taskIds.has(dependency)) {
+                errors.push(
+                    `${task.id}: Task dependency '${dependency}' does not exist.`
+                );
+            }
+
+            if (dependency === task.id) {
+                errors.push(
+                    `${task.id}: Task cannot depend on itself.`
+                );
+            }
+        }
+    }
 }

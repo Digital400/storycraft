@@ -15,6 +15,12 @@ export interface JiraStory {
     title: string;
 }
 
+export interface JiraTask {
+    id: string;
+    key: string;
+    title: string;
+}
+
 export interface JiraProvider {
     name: string;
 
@@ -37,4 +43,11 @@ export interface JiraProvider {
         title: string,
         description: string
     ): Promise<JiraStory>;
+
+    createTask(
+        projectKey: string,
+        storyKey: string,
+        title: string,
+        description: string
+    ): Promise<JiraTask>;
 }

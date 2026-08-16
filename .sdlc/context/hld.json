@@ -1,0 +1,31 @@
+{
+  "version": "1.0",
+  "project": "storycraft",
+  "status": "available",
+  "hld": {
+    "description": "StoryCraft consists of CLI commands, provider abstractions, validators, and execution tracking outputs.",
+    "components": [
+      "CLI entrypoint",
+      "AI provider",
+      "Jira provider",
+      "HLD provider",
+      "Validation layer"
+    ],
+    "integrations": [
+      "Jira Cloud",
+      "Confluence"
+    ],
+    "dataSources": [
+      "Project local context files",
+      "Confluence HLD page"
+    ],
+    "securityRequirements": [
+      "Credentials must come from environment variables",
+      "No token persistence in generated files"
+    ],
+    "nonFunctionalRequirements": [
+      "Deterministic validation before Jira creation",
+      "Human approval step before mutation"
+    ]
+  }
+}

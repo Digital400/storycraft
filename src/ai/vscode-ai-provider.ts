@@ -192,13 +192,28 @@ Generate production-quality Epics and User Stories from the supplied:
         "storyPoints": 5
       }
     }
+    ],
+    "tasks": [
+        {
+            "id": "TASK-001",
+            "storyId": "ST-001",
+            "title": "Task title",
+            "description": "Task description",
+            "technicalDetails": [
+                "Technical detail"
+            ],
+            "dependencies": [],
+            "estimate": {
+                "hours": 6
+            }
+        }
   ]
 }
 
 ## PROBLEM CONTEXT
 
 ${JSON.stringify(
-        request.context.problem,
+    request.context.problem.data,
         null,
         2
     )}
@@ -206,7 +221,7 @@ ${JSON.stringify(
 ## SOLUTION CONTEXT
 
 ${JSON.stringify(
-        request.context.solution,
+    request.context.solution.data,
         null,
         2
     )}
@@ -239,6 +254,7 @@ function parseResponse(
         response as {
             epics?: unknown;
             stories?: unknown;
+            tasks?: unknown;
         };
 
     if (
@@ -261,11 +277,24 @@ function parseResponse(
         );
     }
 
+    if (
+        !Array.isArray(
+            value.tasks
+        )
+    ) {
+        throw new Error(
+            "VS Code AI response is missing tasks."
+        );
+    }
+
     return {
         epics:
             value.epics as StoryGenerationResult["epics"],
 
         stories:
-            value.stories as StoryGenerationResult["stories"]
+            value.stories as StoryGenerationResult["stories"],
+
+        tasks:
+            value.tasks as StoryGenerationResult["tasks"]
     };
 }

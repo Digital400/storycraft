@@ -2,7 +2,8 @@ import {
     JiraProvider,
     JiraProject,
     JiraEpic,
-    JiraStory
+    JiraStory,
+    JiraTask
 } from "./jira-provider.js";
 
 import { loadJiraCredentials } from "./jira-credentials.js";
@@ -98,8 +99,17 @@ export class JiraCloudProvider implements JiraProvider {
         title: string,
         description: string
     ): Promise<JiraEpic> {
-        throw new Error(
-            "Real Jira Epic creation is not implemented yet."
+        return this.createIssueWithFallback<JiraEpic>(
+            ["Epic"],
+            projectKey,
+            title,
+            description,
+            undefined,
+            (created) => ({
+                id: created.id,
+                key: created.key,
+                title
+            })
         );
     }
 
@@ -109,8 +119,162 @@ export class JiraCloudProvider implements JiraProvider {
         title: string,
         description: string
     ): Promise<JiraStory> {
-        throw new Error(
-            "Real Jira Story creation is not implemented yet."
+        return this.createIssueWithFallback<JiraStory>(
+            ["Story", "User Story"],
+            projectKey,
+            title,
+            description,
+            epicKey,
+            (created) => ({
+                id: created.id,
+                key: created.key,
+                title
+            })
         );
+    }
+
+    async createTask(
+        projectKey: string,
+        storyKey: string,
+        title: string,
+        description: string
+    ): Promise<JiraTask> {
+        return this.createIssueWithFallback<JiraTask>(
+            ["Task"],
+            projectKey,
+            title,
+            description,
+            storyKey,
+            (created) => ({
+                id: created.id,
+                key: created.key,
+                title
+            })
+        );
+    }
+
+    private async createIssueWithFallback<T>(
+        issueTypeNames: string[],
+        projectKey: string,
+        title: string,
+        description: string,
+        parentKey: string | undefined,
+        map: (created: { id: string; key: string }) => T
+    ): Promise<T> {
+        const failures: string[] = [];
+
+        for (const issueTypeName of issueTypeNames) {
+            try {
+                const created = await this.createIssue(
+                    issueTypeName,
+                    projectKey,
+                    title,
+                    description,
+                    parentKey
+                );
+
+                return map(created);
+            } catch (error) {
+                failures.push(
+                    `${issueTypeName}: ${error instanceof Error ? error.message : String(error)}`
+                );
+            }
+        }
+
+        throw new Error(
+            `Jira issue creation failed. Tried ${issueTypeNames.join(", ")}. ${failures.join(" | ")}`
+        );
+    }
+
+    private async createIssue(
+        issueTypeName: string,
+        projectKey: string,
+        title: string,
+        description: string,
+        parentKey: string | undefined
+    ): Promise<{ id: string; key: string }> {
+        const body: {
+            fields: {
+                project: { key: string };
+                summary: string;
+                description: {
+                    type: "doc";
+                    version: 1;
+                    content: Array<{
+                        type: "paragraph";
+                        content: Array<{
+                            type: "text";
+                            text: string;
+                        }>;
+                    }>;
+                };
+                issuetype: { name: string };
+                parent?: { key: string };
+            };
+        } = {
+            fields: {
+                project: {
+                    key: projectKey
+                },
+                summary: title,
+                description: {
+                    type: "doc",
+                    version: 1,
+                    content: [
+                        {
+                            type: "paragraph",
+                            content: [
+                                {
+                                    type: "text",
+                                    text: description
+                                }
+                            ]
+                        }
+                    ]
+                },
+                issuetype: {
+                    name: issueTypeName
+                }
+            }
+        };
+
+        if (parentKey) {
+            body.fields.parent = {
+                key: parentKey
+            };
+        }
+
+        const response = await fetch(
+            `${this.baseUrl}/rest/api/3/issue`,
+            {
+                method: "POST",
+                headers: this.headers,
+                body: JSON.stringify(body)
+            }
+        );
+
+        if (!response.ok) {
+            const errorBody = await response.text();
+
+            throw new Error(
+                `Jira issue request failed (${response.status}): ${errorBody}`
+            );
+        }
+
+        const data = await response.json() as {
+            id?: string;
+            key?: string;
+        };
+
+        if (!data.id || !data.key) {
+            throw new Error(
+                "Jira issue response is missing id/key."
+            );
+        }
+
+        return {
+            id: data.id,
+            key: data.key
+        };
     }
 }

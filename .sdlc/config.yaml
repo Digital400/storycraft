@@ -1,0 +1,18 @@
+project:
+  name: storycraft
+jira:
+  enabled: true
+  provider: jira-cloud
+  base_url: ""
+  project_key: ""
+confluence:
+  enabled: true
+  space_key: ""
+ai:
+  provider: claude
+  mode: direct
+resources:
+  hld:
+    provider: confluence
+storycraft:
+  require_human_review: true

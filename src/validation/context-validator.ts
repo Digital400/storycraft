@@ -1,4 +1,7 @@
-import { StoryCraftContext } from "../context/context-loader.js";
+import {
+  StoryCraftContext,
+  ContextResource
+} from "../context/context-loader.js";
 
 export interface ContextValidationResult {
   passed: boolean;
@@ -12,9 +15,30 @@ export function validateContext(
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  validateProblem(context.problem, errors);
-  validateSolution(context.solution, errors);
-  validateHld(context.hld, errors);
+  validateProblem(context.problem, warnings);
+  validateSolution(context.solution, warnings);
+  validateHld(context.hld, warnings);
+
+  const hasProblem =
+    context.problem.available;
+
+  const hasSolution =
+    context.solution.available;
+
+  const hasHld =
+    context.hld.available;
+
+  if (!hasHld) {
+    errors.push(
+      "HLD source is missing or marked not_available. Configure Confluence HLD or provide local HLD content."
+    );
+  }
+
+  if (!hasProblem && !hasSolution) {
+    errors.push(
+      "No usable project context found. Provide problem or solution context (non-placeholder)."
+    );
+  }
 
   return {
     passed: errors.length === 0,
@@ -24,79 +48,85 @@ export function validateContext(
 }
 
 function validateProblem(
-  problem: unknown,
-  errors: string[]
+  problem: ContextResource,
+  warnings: string[]
 ): void {
-  if (!isObject(problem)) {
-    errors.push("Problem context is invalid.");
+  if (!problem.exists) {
+    warnings.push("problem.json is missing.");
     return;
   }
 
-  if (problem.status === "not_available") {
-    errors.push(
-      "Problem Discovery has not been completed."
-    );
+  if (problem.isPlaceholder) {
+    warnings.push("Problem context is a placeholder.");
+    return;
   }
 
+  const data = problem.data;
+
   if (
-    isObject(problem.problem) &&
-    typeof problem.problem.statement === "string" &&
-    !problem.problem.statement.trim()
+    isObject(data) &&
+    isObject(data.problem) &&
+    typeof data.problem.statement === "string" &&
+    !data.problem.statement.trim()
   ) {
-    errors.push(
-      "Problem statement is missing."
+    warnings.push(
+      "Problem statement is empty."
     );
   }
 }
 
 function validateSolution(
-  solution: unknown,
-  errors: string[]
+  solution: ContextResource,
+  warnings: string[]
 ): void {
-  if (!isObject(solution)) {
-    errors.push("Solution context is invalid.");
+  if (!solution.exists) {
+    warnings.push("solution.json is missing.");
     return;
   }
 
-  if (solution.status === "not_available") {
-    errors.push(
-      "Solution Discovery has not been completed."
-    );
+  if (solution.isPlaceholder) {
+    warnings.push("Solution context is a placeholder.");
+    return;
   }
 
+  const data = solution.data;
+
   if (
-    isObject(solution.solution) &&
-    typeof solution.solution.description === "string" &&
-    !solution.solution.description.trim()
+    isObject(data) &&
+    isObject(data.solution) &&
+    typeof data.solution.description === "string" &&
+    !data.solution.description.trim()
   ) {
-    errors.push(
-      "Solution description is missing."
+    warnings.push(
+      "Solution description is empty."
     );
   }
 }
 
 function validateHld(
-  hld: unknown,
-  errors: string[]
+  hld: ContextResource,
+  warnings: string[]
 ): void {
-  if (!isObject(hld)) {
-    errors.push("HLD context is invalid.");
+  if (!hld.exists) {
+    warnings.push("hld.json is missing.");
     return;
   }
 
-  if (hld.status === "not_available") {
-    errors.push(
-      "HLD has not been completed."
-    );
+  if (hld.isPlaceholder) {
+    warnings.push("Local HLD context is a placeholder.");
+    return;
   }
 
+  const data = hld.data;
+
   if (
-    isObject(hld.hld) &&
-    typeof hld.hld.description === "string" &&
-    !hld.hld.description.trim()
+    isObject(data) &&
+    isObject(data.hld) &&
+    typeof data.hld.description === "string" &&
+    !data.hld.description.trim()
   ) {
-    errors.push(
-      "HLD description is missing."
+    warnings.push(
+      "Local HLD description is empty."
     );
   }
 }

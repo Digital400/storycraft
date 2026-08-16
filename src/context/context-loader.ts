@@ -1,10 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
 
+export interface ContextResource {
+  source: string;
+  exists: boolean;
+  available: boolean;
+  isPlaceholder: boolean;
+  data: unknown;
+}
+
 export interface StoryCraftContext {
-  problem: unknown;
-  solution: unknown;
-  hld: unknown;
+  problem: ContextResource;
+  solution: ContextResource;
+  hld: ContextResource;
 }
 
 export function loadContext(): StoryCraftContext {
@@ -39,11 +47,21 @@ export function loadContext(): StoryCraftContext {
 function readJsonFile(
   filePath: string,
   fileName: string
-): unknown {
+): ContextResource {
+  const source = path.join(
+    ".sdlc",
+    "context",
+    fileName
+  );
+
   if (!fs.existsSync(filePath)) {
-    throw new Error(
-      `Context file not found: ${fileName}`
-    );
+    return {
+      source,
+      exists: false,
+      available: false,
+      isPlaceholder: true,
+      data: null
+    };
   }
 
   const content = fs.readFileSync(
@@ -52,10 +70,31 @@ function readJsonFile(
   );
 
   try {
-    return JSON.parse(content);
+    const data = JSON.parse(content);
+    const isPlaceholder =
+      isObject(data) &&
+      data.status === "not_available";
+
+    return {
+      source,
+      exists: true,
+      available: !isPlaceholder,
+      isPlaceholder,
+      data
+    };
   } catch {
     throw new Error(
       `Invalid JSON in context file: ${fileName}`
     );
   }
+}
+
+function isObject(
+  value: unknown
+): value is Record<string, any> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
 }

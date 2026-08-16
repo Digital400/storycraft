@@ -2,59 +2,78 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
-  input,
-  confirm,
-  select
+	input,
+	confirm,
+	select
 } from "@inquirer/prompts";
 
 import {
-  validateStoryDocument
+	validateStoryDocument
 } from "../validation/story-document-validator.js";
 
 import {
-  validateContext
+	validateContext
 } from "../validation/context-validator.js";
 
 import {
-  loadContext
+	loadContext,
+	StoryCraftContext
 } from "../context/context-loader.js";
 
 import {
-  createAIProvider
+	createAIProvider
 } from "../ai/ai-provider-factory.js";
 
 import {
-  loadConfig,
-  saveConfig
+	loadConfig,
+	saveConfig
 } from "../config.js";
 
 import {
-  buildStoryGraph
+	buildStoryGraph
 } from "../core/story-graph.js";
 
 import {
-  createHLDProvider
+	createHLDProvider
 } from "../resources/hld-provider-factory.js";
 
 import {
-  runJiraWorkflow
-} from "./jira-workflow.js";
-
-import {
-  validateReview
+	validateReview
 } from "../validation/review-validator.js";
 
+import {
+	createJiraProvider
+} from "../jira/jira-provider-factory.js";
+
 import type {
-  StoryGenerationResult
+	StoryGenerationResult
 } from "../ai/ai-provider.js";
 
 import type {
-  Epic
-} from "../schemas/epic.js";
+	StoryCraftGenerationDocument
+} from "../schemas/storycraft-generation.js";
 
-import type {
-  Story
-} from "../schemas/story.js";
+
+interface JiraCreationResult {
+	version: string;
+	status: "in_progress" | "completed" | "failed";
+	projectKey: string;
+	createdAt: string;
+	completedAt?: string;
+	epics: Array<{
+		storyCraftId: string;
+		jiraKey: string;
+	}>;
+	stories: Array<{
+		storyCraftId: string;
+		jiraKey: string;
+	}>;
+	tasks: Array<{
+		storyCraftId: string;
+		jiraKey: string;
+	}>;
+	errors: string[];
+}
 
 
 // ==================================================
@@ -62,274 +81,197 @@ import type {
 // ==================================================
 
 export async function initStoryCraft():
-  Promise<void> {
+	Promise<void> {
 
-  const projectRoot =
-    process.cwd();
+	const projectRoot =
+		process.cwd();
 
-  const sdlcPath =
-    path.join(
-      projectRoot,
-      ".sdlc"
-    );
+	const sdlcPath =
+		path.join(
+			projectRoot,
+			".sdlc"
+		);
 
-  const directories = [
-    sdlcPath,
-    path.join(
-      sdlcPath,
-      "context"
-    ),
-    path.join(
-      sdlcPath,
-      "storycraft"
-    )
-  ];
+	const directories = [
+		sdlcPath,
+		path.join(
+			sdlcPath,
+			"context"
+		),
+		path.join(
+			sdlcPath,
+			"storycraft"
+		),
+		path.join(
+			projectRoot,
+			".github",
+			"prompts"
+		)
+	];
 
-  for (
-    const directory
-    of directories
-  ) {
+	for (
+		const directory
+		of directories
+	) {
+		fs.mkdirSync(
+			directory,
+			{
+				recursive: true
+			}
+		);
+	}
 
-    fs.mkdirSync(
-      directory,
-      {
-        recursive: true
-      }
-    );
-  }
+	const configPath =
+		path.join(
+			sdlcPath,
+			"config.yaml"
+		);
 
-  const configPath =
-    path.join(
-      sdlcPath,
-      "config.yaml"
-    );
+	let projectName =
+		path.basename(
+			projectRoot
+		);
 
-  if (
-    fs.existsSync(
-      configPath
-    )
-  ) {
+	if (!fs.existsSync(configPath)) {
+		projectName =
+			await input({
+				message:
+					"Project name:",
+				default:
+					projectName,
+				validate:
+					(
+						value
+					) => {
+						if (!value.trim()) {
+							return (
+								"Project name is required."
+							);
+						}
 
-    console.log("");
+						return true;
+					}
+			});
 
-    console.log(
-      "StoryCraft is already initialized in this project."
-    );
+		const config = [
+			"project:",
+			`  name: \"${escapeYaml(projectName.trim())}\"`,
+			"",
+			"jira:",
+			"  enabled: true",
+			"  provider: \"jira-cloud\"",
+			"  base_url: \"\"",
+			"  project_key: \"\"",
+			"",
+			"confluence:",
+			"  enabled: true",
+			"  space_key: \"\"",
+			"",
+			"ai:",
+			"  provider: \"claude\"",
+			"  mode: \"direct\"",
+			"",
+			"resources:",
+			"  hld:",
+			"    provider: \"confluence\"",
+			"",
+			"storycraft:",
+			"  require_human_review: true",
+			""
+		].join("\n");
 
-    console.log(
-      "Existing config.yaml was not changed."
-    );
+		fs.writeFileSync(
+			configPath,
+			config,
+			"utf8"
+		);
+	}
 
-    console.log("");
+	createContextFile(
+		sdlcPath,
+		"problem.json",
+		createProblemTemplate(
+			projectName.trim()
+		)
+	);
 
-    return;
-  }
+	createContextFile(
+		sdlcPath,
+		"solution.json",
+		createSolutionTemplate(
+			projectName.trim()
+		)
+	);
 
-  const projectName =
-    await input({
-      message:
-        "Project name:",
-      validate:
-        (
-          value
-        ) => {
+	createContextFile(
+		sdlcPath,
+		"hld.json",
+		createHldTemplate(
+			projectName.trim()
+		)
+	);
 
-          if (
-            !value.trim()
-          ) {
+	createCopilotFiles(
+		projectRoot
+	);
 
-            return (
-              "Project name is required."
-            );
-          }
+	createStoryCraftEnvTemplate(
+		projectRoot
+	);
 
-          return true;
-        }
-    });
-
-
-  /*
-   * Create VS Code instruction file.
-   */
-
-  const githubDirectory =
-    path.join(
-      projectRoot,
-      ".github"
-    );
-
-  fs.mkdirSync(
-    githubDirectory,
-    {
-      recursive: true
-    }
-  );
-
-  const copilotInstructionsPath =
-    path.join(
-      githubDirectory,
-      "copilot-instructions.md"
-    );
-
-  if (
-    !fs.existsSync(
-      copilotInstructionsPath
-    )
-  ) {
-
-    fs.writeFileSync(
-      copilotInstructionsPath,
-      createCopilotInstructions(),
-      "utf8"
-    );
-  }
-
-
-  /*
-   * StoryCraft configuration.
-   */
-
-  const config =
-    `project:
-  name: "${escapeYaml(projectName.trim())}"
-
-jira:
-  enabled: true
-  provider: "jira"
-  project_key: ""
-
-confluence:
-  enabled: true
-  space_key: ""
-
-ai:
-  provider: "claude"
-  mode: "vscode"
-
-resources:
-  hld:
-    provider: "confluence"
-
-storycraft:
-  require_human_review: true
-`;
-
-
-  fs.writeFileSync(
-    configPath,
-    config,
-    "utf8"
-  );
-
-
-  /*
-   * Context templates.
-   */
-
-  createContextFile(
-    sdlcPath,
-    "problem.json",
-    createProblemTemplate(
-      projectName.trim()
-    )
-  );
-
-  createContextFile(
-    sdlcPath,
-    "solution.json",
-    createSolutionTemplate(
-      projectName.trim()
-    )
-  );
-
-  createContextFile(
-    sdlcPath,
-    "hld.json",
-    createHldTemplate(
-      projectName.trim()
-    )
-  );
-
-
-  console.log("");
-
-  console.log(
-    "StoryCraft project initialized!"
-  );
-
-  console.log("");
-
-  console.log(
-    ".sdlc/"
-  );
-
-  console.log(
-    "├── config.yaml"
-  );
-
-  console.log(
-    "├── context/"
-  );
-
-  console.log(
-    "│   ├── problem.json"
-  );
-
-  console.log(
-    "│   ├── solution.json"
-  );
-
-  console.log(
-    "│   └── hld.json"
-  );
-
-  console.log(
-    "└── storycraft/"
-  );
-
-  console.log("");
-
-  console.log(
-    "VS Code instructions:"
-  );
-
-  console.log(
-    ".github/copilot-instructions.md"
-  );
-
-  console.log("");
+	console.log("");
+	console.log(
+		"StoryCraft initialized."
+	);
+	console.log("");
+	console.log(
+		"Installed:"
+	);
+	console.log(
+		".sdlc/"
+	);
+	console.log(
+		".github/prompts/sdlc-storycraft-start.prompt.md"
+	);
+	console.log(
+		".github/prompts/sdlc-start-workflow.prompt.md"
+	);
+	console.log(
+		".github/copilot-instructions.md"
+	);
+	console.log(
+		".env.storycraft.example"
+	);
+	console.log("");
+	console.log(
+		"Next: copy .env.storycraft.example to .env and set your Jira/Confluence values."
+	);
+	console.log("");
 }
-
 
 // ==================================================
 // CONTEXT FILE
 // ==================================================
 
 function createContextFile(
-  sdlcPath: string,
-  fileName: string,
-  content: string
+	sdlcPath: string,
+	fileName: string,
+	content: string
 ): void {
+	const filePath =
+		path.join(
+			sdlcPath,
+			"context",
+			fileName
+		);
 
-  const filePath =
-    path.join(
-      sdlcPath,
-      "context",
-      fileName
-    );
-
-  if (
-    !fs.existsSync(
-      filePath
-    )
-  ) {
-
-    fs.writeFileSync(
-      filePath,
-      content,
-      "utf8"
-    );
-  }
+	if (!fs.existsSync(filePath)) {
+		fs.writeFileSync(
+			filePath,
+			content,
+			"utf8"
+		);
+	}
 }
 
 
@@ -338,37 +280,30 @@ function createContextFile(
 // ==================================================
 
 function createProblemTemplate(
-  projectName: string
+	projectName: string
 ): string {
-
-  return JSON.stringify(
-    {
-      version:
-        "1.0",
-
-      project:
-        projectName,
-
-      status:
-        "not_available",
-
-      problem: {
-        statement:
-          "",
-
-        businessImpact:
-          "",
-
-        stakeholders:
-          [],
-
-        successMetrics:
-          []
-      }
-    },
-    null,
-    2
-  );
+	return JSON.stringify(
+		{
+			version:
+				"1.0",
+			project:
+				projectName,
+			status:
+				"not_available",
+			problem: {
+				statement:
+					"",
+				businessImpact:
+					"",
+				stakeholders:
+					[],
+				successMetrics:
+					[]
+			}
+		},
+		null,
+		2
+	);
 }
 
 
@@ -377,40 +312,32 @@ function createProblemTemplate(
 // ==================================================
 
 function createSolutionTemplate(
-  projectName: string
+	projectName: string
 ): string {
-
-  return JSON.stringify(
-    {
-      version:
-        "1.0",
-
-      project:
-        projectName,
-
-      status:
-        "not_available",
-
-      solution: {
-        description:
-          "",
-
-        objectives:
-          [],
-
-        features:
-          [],
-
-        assumptions:
-          [],
-
-        risks:
-          []
-      }
-    },
-    null,
-    2
-  );
+	return JSON.stringify(
+		{
+			version:
+				"1.0",
+			project:
+				projectName,
+			status:
+				"not_available",
+			solution: {
+				description:
+					"",
+				objectives:
+					[],
+				features:
+					[],
+				assumptions:
+					[],
+				risks:
+					[]
+			}
+		},
+		null,
+		2
+	);
 }
 
 
@@ -419,43 +346,34 @@ function createSolutionTemplate(
 // ==================================================
 
 function createHldTemplate(
-  projectName: string
+	projectName: string
 ): string {
-
-  return JSON.stringify(
-    {
-      version:
-        "1.0",
-
-      project:
-        projectName,
-
-      status:
-        "not_available",
-
-      hld: {
-        description:
-          "",
-
-        components:
-          [],
-
-        integrations:
-          [],
-
-        dataSources:
-          [],
-
-        securityRequirements:
-          [],
-
-        nonFunctionalRequirements:
-          []
-      }
-    },
-    null,
-    2
-  );
+	return JSON.stringify(
+		{
+			version:
+				"1.0",
+			project:
+				projectName,
+			status:
+				"not_available",
+			hld: {
+				description:
+					"",
+				components:
+					[],
+				integrations:
+					[],
+				dataSources:
+					[],
+				securityRequirements:
+					[],
+				nonFunctionalRequirements:
+					[]
+			}
+		},
+		null,
+		2
+	);
 }
 
 
@@ -464,69 +382,51 @@ function createHldTemplate(
 // ==================================================
 
 export function createStoriesFile():
-  void {
+	void {
 
-  const storiesPath =
-    path.join(
-      process.cwd(),
-      ".sdlc",
-      "storycraft",
-      "stories.json"
-    );
+	const storiesPath =
+		getStoriesPath();
 
-  if (
-    fs.existsSync(
-      storiesPath
-    )
-  ) {
+	if (fs.existsSync(storiesPath)) {
+		console.log("");
+		console.log(
+			"stories.json already exists."
+		);
+		console.log("");
+		return;
+	}
 
-    console.log("");
+	const content: StoryCraftGenerationDocument = {
+		version:
+			"1.0",
+		generatedBy:
+			"manual",
+		epics:
+			[],
+		stories:
+			[],
+		tasks:
+			[]
+	};
 
-    console.log(
-      "stories.json already exists."
-    );
+	fs.writeFileSync(
+		storiesPath,
+		JSON.stringify(
+			content,
+			null,
+			2
+		),
+		"utf8"
+	);
 
-    console.log("");
-
-    return;
-  }
-
-  const content =
-    JSON.stringify(
-      {
-        version:
-          "1.0",
-
-        generatedBy:
-          "manual",
-
-        epics:
-          [],
-
-        stories:
-          []
-      },
-      null,
-      2
-    );
-
-  fs.writeFileSync(
-    storiesPath,
-    content,
-    "utf8"
-  );
-
-  console.log("");
-
-  console.log(
-    "Story file created:"
-  );
-
-  console.log(
-    ".sdlc/storycraft/stories.json"
-  );
-
-  console.log("");
+	console.log("");
+	console.log(
+		"Story file created:"
+	);
+	console.log(
+		".sdlc/storycraft/stories.json"
+	);
+	console.log("");
 }
 
 
@@ -535,156 +435,90 @@ export function createStoriesFile():
 // ==================================================
 
 export function validateStoriesFile():
-  void {
+	void {
 
-  const storiesPath =
-    path.join(
-      process.cwd(),
-      ".sdlc",
-      "storycraft",
-      "stories.json"
-    );
+	const storiesPath =
+		getStoriesPath();
 
-  if (
-    !fs.existsSync(
-      storiesPath
-    )
-  ) {
+	if (!fs.existsSync(storiesPath)) {
+		console.log("");
+		console.log(
+			"stories.json not found."
+		);
+		console.log(
+			"Run: sdlc storycraft start"
+		);
+		console.log("");
+		return;
+	}
 
-    console.log("");
+	const fileContent =
+		fs.readFileSync(
+			storiesPath,
+			"utf8"
+		);
 
-    console.log(
-      "stories.json not found."
-    );
+	const document =
+		JSON.parse(
+			fileContent
+		) as StoryCraftGenerationDocument;
 
-    console.log(
-      "Run: sdlc storycraft create"
-    );
+	const result =
+		validateStoryDocument(
+			document
+		);
 
-    console.log("");
+	console.log("");
+	console.log(
+		"StoryCraft Document Validator"
+	);
+	console.log(
+		"============================="
+	);
+	console.log("");
 
-    return;
-  }
+	if (result.passed) {
+		console.log(
+			"Validation PASSED."
+		);
+	} else {
+		console.log(
+			"Validation FAILED."
+		);
+	}
 
-  try {
+	if (result.errors.length > 0) {
+		console.log("");
+		console.log("Errors:");
+		for (
+			const error
+			of result.errors
+		) {
+			console.log(
+				`  - ${error}`
+			);
+		}
+	}
 
-    const fileContent =
-      fs.readFileSync(
-        storiesPath,
-        "utf8"
-      );
+	if (result.warnings.length > 0) {
+		console.log("");
+		console.log("Warnings:");
+		for (
+			const warning
+			of result.warnings
+		) {
+			console.log(
+				`  - ${warning}`
+			);
+		}
+	}
 
-    const document =
-      JSON.parse(
-        fileContent
-      );
+	console.log("");
 
-    const result =
-      validateStoryDocument(
-        document
-      );
-
-    console.log("");
-
-    console.log(
-      "StoryCraft Document Validator"
-    );
-
-    console.log(
-      "============================="
-    );
-
-    console.log("");
-
-    if (
-      result.errors.length > 0
-    ) {
-
-      console.log(
-        "Errors:"
-      );
-
-      for (
-        const error
-        of result.errors
-      ) {
-
-        console.log(
-          `  ✗ ${error}`
-        );
-      }
-
-      console.log("");
-    }
-
-    if (
-      result.warnings.length > 0
-    ) {
-
-      console.log(
-        "Warnings:"
-      );
-
-      for (
-        const warning
-        of result.warnings
-      ) {
-
-        console.log(
-          `  ⚠ ${warning}`
-        );
-      }
-
-      console.log("");
-    }
-
-    if (
-      result.passed
-    ) {
-
-      console.log(
-        "✓ Story document validation PASSED."
-      );
-
-    } else {
-
-      console.log(
-        "✗ Story document validation FAILED."
-      );
-    }
-
-    console.log("");
-
-    if (
-      !result.passed
-    ) {
-
-      process.exitCode =
-        1;
-    }
-
-  } catch (error) {
-
-    console.log("");
-
-    console.log(
-      "✗ Unable to validate stories.json."
-    );
-
-    if (
-      error instanceof Error
-    ) {
-
-      console.log(
-        `  ${error.message}`
-      );
-    }
-
-    console.log("");
-
-    process.exitCode =
-      1;
-  }
+	if (!result.passed) {
+		process.exitCode =
+			1;
+	}
 }
 
 
@@ -693,106 +527,50 @@ export function validateStoriesFile():
 // ==================================================
 
 export async function generateStories():
-  Promise<void> {
+	Promise<void> {
 
-  console.log("");
+	const config =
+		loadConfig();
 
-  console.log(
-    "StoryCraft Story Generator"
-  );
+	const context =
+		loadContext();
 
-  console.log(
-    "--------------------------"
-  );
+	const hldProvider =
+		createHLDProvider(
+			config.resources.hld.provider
+		);
 
-  try {
+	const hld =
+		await hldProvider.load();
 
-    const config =
-      loadConfig();
+	const provider =
+		createAIProvider(
+			config.ai.provider
+		);
 
-    const context =
-      loadContext();
+	const generationResult =
+		await provider.generateStories({
+			context: withLoadedHld(
+				context,
+				hld.source,
+				hld.content
+			),
+			hld
+		});
 
-    const provider =
-      createAIProvider(
-        config.ai.provider
-      );
+	saveGenerationResult(
+		generationResult,
+		provider.name
+	);
 
-    const hldProvider =
-      createHLDProvider(
-        config.resources.hld.provider
-      );
-
-    const hld =
-      await hldProvider.load();
-
-    console.log(
-      `AI Provider: ${provider.name}`
-    );
-
-    console.log(
-      `HLD Provider: ${hldProvider.name}`
-    );
-
-    console.log("");
-
-    console.log(
-      "Generating stories..."
-    );
-
-    const generationResult =
-      await provider.generateStories({
-        context,
-        hld
-      });
-
-    saveGenerationResult(
-      generationResult,
-      provider.name
-    );
-
-    console.log("");
-
-    console.log(
-      `Generated ${generationResult.epics.length} epic(s).`
-    );
-
-    console.log(
-      `Generated ${generationResult.stories.length} story(s).`
-    );
-
-    console.log("");
-
-    console.log(
-      "Output: .sdlc/storycraft/stories.json"
-    );
-
-    console.log("");
-
-  } catch (error) {
-
-    console.error("");
-
-    if (
-      error instanceof Error
-    ) {
-
-      console.error(
-        error.message
-      );
-
-    } else {
-
-      console.error(
-        "Story generation failed."
-      );
-    }
-
-    console.error("");
-
-    process.exitCode =
-      1;
-  }
+	console.log("");
+	console.log(
+		`Generated ${generationResult.epics.length} epics, ${generationResult.stories.length} stories, ${generationResult.tasks.length} tasks.`
+	);
+	console.log(
+		"Output: .sdlc/storycraft/stories.json"
+	);
+	console.log("");
 }
 
 
@@ -801,50 +579,8 @@ export async function generateStories():
 // ==================================================
 
 export async function runStoryCraft():
-  Promise<void> {
-
-  console.log("");
-
-  console.log(
-    "StoryCraft Workflow"
-  );
-
-  console.log(
-    "==================="
-  );
-
-  console.log("");
-
-  try {
-
-    const config =
-      loadConfig();
-
-    await executeGenerationWorkflow(
-      config
-    );
-
-  } catch (error) {
-
-    console.error("");
-
-    console.error(
-      "StoryCraft workflow failed."
-    );
-
-    console.error("");
-
-    if (
-      error instanceof Error
-    ) {
-
-      console.error(
-        error.message
-      );
-    }
-
-    console.error("");
-  }
+	Promise<void> {
+	await startStoryCraft();
 }
 
 
@@ -853,260 +589,304 @@ export async function runStoryCraft():
 // ==================================================
 
 export async function startStoryCraft():
-  Promise<void> {
-
-  console.log("");
-
-  console.log(
-    "StoryCraft Developer Workflow"
-  );
-
-  console.log(
-    "============================="
-  );
-
-  console.log("");
-
-  const config =
-    loadConfig();
-
-  console.log(
-    `Project: ${config.project.name}`
-  );
-
-  console.log("");
-
-
-  /*
-   * --------------------------------------------------
-   * STEP 1
-   * Context
-   * --------------------------------------------------
-   */
-
-  console.log(
-    "1. Loading context..."
-  );
-
-  const context =
-    loadContext();
-
-  console.log(
-    "   ✓ Context loaded"
-  );
-
-  console.log("");
-
-
-  /*
-   * --------------------------------------------------
-   * STEP 2
-   * Context validation
-   * --------------------------------------------------
-   */
-
-  console.log(
-    "2. Validating context..."
-  );
-
-  const contextResult =
-    validateContext(
-      context
-    );
-
-  if (
-    !contextResult.passed
-  ) {
-
-    console.log(
-      "   ✗ Context validation failed."
-    );
-
-    console.log("");
-
-    for (
-      const error
-      of contextResult.errors
-    ) {
-
-      console.log(
-        `   - ${error}`
-      );
-    }
-
-    console.log("");
-
-    return;
-  }
-
-  console.log(
-    "   ✓ Context validation passed"
-  );
-
-  console.log("");
-
-
-  /*
-   * --------------------------------------------------
-   * STEP 3
-   * Configuration
-   * --------------------------------------------------
-   */
-
-  console.log(
-    "3. Loading configuration..."
-  );
-
-  console.log(
-    `   ✓ AI Provider: ${config.ai.provider}`
-  );
-
-  console.log(
-    `   ✓ AI Mode: ${getAIMode(config)}`
-  );
-
-  console.log("");
-
-
-
-  /*
-   * --------------------------------------------------
-   * STEP 4
-   * HLD
-   * --------------------------------------------------
-   */
-
-  console.log(
-    "4. Loading HLD..."
-  );
-
-  const hldProvider =
-    createHLDProvider(
-      config.resources.hld.provider
-    );
-
-  const hld =
-    await hldProvider.load();
-
-  console.log(
-    `   ✓ HLD loaded from: ${hldProvider.name}`
-  );
-
-  console.log("");
-
-
-
-  /*
-   * --------------------------------------------------
-   * STEP 5
-   * Jira
-   * --------------------------------------------------
-   */
-
-  console.log(
-    "5. Checking Jira..."
-  );
-
-  if (
-    config.jira.enabled
-  ) {
-
-    if (
-      !config.jira.project_key
-    ) {
-
-      console.log(
-        "   ! No Jira project selected."
-      );
-
-      console.log("");
-
-      console.log(
-        "Run:"
-      );
-
-      console.log(
-        "sdlc storycraft jira-setup"
-      );
-
-      console.log("");
-
-      return;
-    }
-
-    console.log(
-      `   ✓ Jira project: ${config.jira.project_key}`
-    );
-
-  } else {
-
-    console.log(
-      "   ✓ Jira integration disabled"
-    );
-  }
-
-  console.log("");
-
-
-
-  /*
-   * --------------------------------------------------
-   * STEP 6
-   * AI
-   * --------------------------------------------------
-   */
-
-  const mode =
-    getAIMode(
-      config
-    );
-
-  if (
-    mode === "vscode"
-  ) {
-
-    await prepareVSCodeWorkflow(
-      context,
-      hld
-    );
-
-    return;
-  }
-
-
-  /*
-   * Direct API
-   */
-
-  console.log(
-    "6. Generating Epics + Stories..."
-  );
-
-  const provider =
-    createAIProvider(
-      config.ai.provider
-    );
-
-  const generationResult =
-    await provider.generateStories({
-      context,
-      hld
-    });
-
-  console.log(
-    `   ✓ Generated ${generationResult.epics.length} epic(s)`
-  );
-
-  console.log(
-    `   ✓ Generated ${generationResult.stories.length} story(s)`
-  );
-
-  console.log("");
-
-  await completeGeneratedWorkflow(
-    generationResult,
-    provider.name
-  );
+	Promise<void> {
+
+	console.log("");
+	console.log(
+		"StoryCraft SDLC Workflow"
+	);
+	console.log(
+		"========================"
+	);
+	console.log("");
+
+	const config =
+		loadConfig();
+
+	console.log(
+		`Project: ${config.project.name}`
+	);
+	console.log("");
+
+	console.log(
+		"Loading project context..."
+	);
+
+	const loadedContext =
+		loadContext();
+
+	console.log("✓");
+	console.log("");
+
+	console.log(
+		"Loading HLD..."
+	);
+
+	const hldProvider =
+		createHLDProvider(
+			config.resources.hld.provider
+		);
+
+	const hld =
+		await hldProvider.load();
+
+	console.log(
+		`✓ ${hldProvider.name}`
+	);
+	console.log("");
+
+	const context = withLoadedHld(
+		loadedContext,
+		hld.source,
+		hld.content
+	);
+
+	console.log(
+		"Validating context..."
+	);
+
+	const contextResult =
+		validateContext(
+			context
+		);
+
+	if (!contextResult.passed) {
+		console.log("✗");
+		for (
+			const error
+			of contextResult.errors
+		) {
+			console.log(
+				`- ${error}`
+			);
+		}
+		console.log("");
+		return;
+	}
+
+	console.log("✓");
+
+	for (
+		const warning
+		of contextResult.warnings
+	) {
+		console.log(
+			`- ${warning}`
+		);
+	}
+
+	console.log("");
+
+	let selectedProjectKey =
+		config.jira.project_key;
+
+	if (config.jira.enabled) {
+		console.log(
+			"Loading Jira projects..."
+		);
+
+		const jira =
+			createJiraProvider(
+				config.jira.provider
+			);
+
+		const projects =
+			await jira.listProjects();
+
+		if (projects.length === 0) {
+			throw new Error(
+				"No Jira projects are available."
+			);
+		}
+
+		console.log("");
+		console.log(
+			"Available Jira Projects"
+		);
+		console.log("");
+
+		projects.forEach(
+			(
+				project,
+				index
+			) => {
+				console.log(
+					`${index + 1}. ${project.key} - ${project.name}`
+				);
+			}
+		);
+
+		console.log("");
+
+		const selected =
+			await select({
+				message:
+					"Select Jira project:",
+				choices:
+					projects.map(
+						(
+							project
+						) => ({
+							name:
+								`${project.key} - ${project.name}`,
+							value:
+								project
+						})
+					)
+			});
+
+		selectedProjectKey =
+			selected.key;
+
+		console.log("");
+		console.log(
+			`Selected: ${selected.key} - ${selected.name}`
+		);
+		console.log("");
+
+		if (
+			selectedProjectKey !== config.jira.project_key
+		) {
+			const saveSelected =
+				await confirm({
+					message:
+						"Save selected Jira project to StoryCraft config?",
+					default:
+						false
+				});
+
+			if (saveSelected) {
+				config.jira.project_key =
+					selectedProjectKey;
+				saveConfig(config);
+			}
+		}
+	}
+
+	console.log(
+		"Generating Epics, Stories and Tasks..."
+	);
+
+	const provider =
+		createAIProvider(
+			config.ai.provider
+		);
+
+	const generationResult =
+		await provider.generateStories({
+			context,
+			hld
+		});
+
+	const document =
+		toGenerationDocument(
+			generationResult,
+			provider.name
+		);
+
+	console.log(
+		`✓ ${document.epics.length} epics, ${document.stories.length} stories, ${document.tasks.length} tasks`
+	);
+	console.log("");
+
+	console.log(
+		"Validating generated SDLC..."
+	);
+
+	const validationResult =
+		validateStoryDocument(
+			document
+		);
+
+	if (!validationResult.passed) {
+		console.log("✗");
+		for (
+			const error
+			of validationResult.errors
+		) {
+			console.log(
+				`- ${error}`
+			);
+		}
+		console.log("");
+		return;
+	}
+
+	console.log("✓");
+
+	if (
+		validationResult.warnings.length > 0
+	) {
+		console.log("");
+		for (
+			const warning
+			of validationResult.warnings
+		) {
+			console.log(
+				`- ${warning}`
+			);
+		}
+	}
+
+	saveGenerationResult(
+		generationResult,
+		provider.name
+	);
+
+	console.log("");
+	printGenerationSummary(
+		config.project.name,
+		hld.source,
+		document
+	);
+
+	const approval =
+		await askForCreationApproval();
+
+	if (!approval) {
+		console.log("");
+		console.log(
+			"Workflow stopped. Nothing was created in Jira."
+		);
+		console.log("");
+		return;
+	}
+
+	if (!config.jira.enabled) {
+		console.log("");
+		console.log(
+			"Jira integration is disabled. Generation result is saved locally."
+		);
+		console.log("");
+		return;
+	}
+
+	if (!selectedProjectKey) {
+		throw new Error(
+			"Jira project selection is required."
+		);
+	}
+
+	await createInJira(
+		config.jira.provider,
+		selectedProjectKey,
+		document
+	);
+
+	console.log("");
+	console.log(
+		"StoryCraft completed successfully."
+	);
+	console.log(
+		`Jira project: ${selectedProjectKey}`
+	);
+	console.log(
+		`Created: ${document.epics.length} Epics, ${document.stories.length} Stories, ${document.tasks.length} Tasks`
+	);
+	console.log(
+		"Execution result: .sdlc/storycraft/jira-result.json"
+	);
+	console.log("");
 }
 
 
@@ -1115,629 +895,22 @@ export async function startStoryCraft():
 // ==================================================
 
 export async function continueStoryCraft():
-  Promise<void> {
-
-  console.log("");
-
-  console.log(
-    "StoryCraft Workflow Continuation"
-  );
-
-  console.log(
-    "================================"
-  );
-
-  console.log("");
-
-  const responsePath =
-    path.join(
-      process.cwd(),
-      ".sdlc",
-      "storycraft",
-      "ai-response.json"
-    );
-
-  if (
-    !fs.existsSync(
-      responsePath
-    )
-  ) {
-
-    throw new Error(
-      [
-        "VS Code AI response was not found.",
-        "",
-        "Expected:",
-        ".sdlc/storycraft/ai-response.json",
-        "",
-        "Open GitHub Copilot Chat or Claude in VS Code",
-        "and execute the instructions in:",
-        ".sdlc/storycraft/ai-task.md"
-      ].join("\n")
-    );
-  }
-
-  console.log(
-    "1. Loading AI response..."
-  );
-
-  const responseText =
-    fs.readFileSync(
-      responsePath,
-      "utf8"
-    );
-
-  let parsed: unknown;
-
-  try {
-
-    parsed =
-      JSON.parse(
-        responseText
-      );
-
-  } catch {
-
-    throw new Error(
-      "ai-response.json contains invalid JSON."
-    );
-  }
-
-  if (
-    !isObject(
-      parsed
-    )
-  ) {
-
-    throw new Error(
-      "AI response must be a JSON object."
-    );
-  }
-
-  if (
-    !Array.isArray(
-      parsed.epics
-    )
-  ) {
-
-    throw new Error(
-      "AI response is missing the 'epics' array."
-    );
-  }
-
-  if (
-    !Array.isArray(
-      parsed.stories
-    )
-  ) {
-
-    throw new Error(
-      "AI response is missing the 'stories' array."
-    );
-  }
-
-  const generationResult:
-    StoryGenerationResult = {
-    epics:
-      parsed.epics as Epic[],
-
-    stories:
-      parsed.stories as Story[]
-  };
-
-  console.log(
-    `   ✓ ${generationResult.epics.length} epic(s) received`
-  );
-
-  console.log(
-    `   ✓ ${generationResult.stories.length} story(s) received`
-  );
-
-  console.log("");
-
-  await completeGeneratedWorkflow(
-    generationResult,
-    "vscode-ai"
-  );
+	Promise<void> {
+	console.log("");
+	console.log(
+		"StoryCraft now runs end-to-end from 'sdlc storycraft start'."
+	);
+	console.log("");
 }
 
 
 // ==================================================
-// PREPARE VS CODE WORKFLOW
-// ==================================================
-
-async function prepareVSCodeWorkflow(
-  context: ReturnType<typeof loadContext>,
-  hld: {
-    source: string;
-    content: string;
-  }
-): Promise<void> {
-
-  console.log(
-    "6. Preparing VS Code AI workflow..."
-  );
-
-  const storycraftPath =
-    path.join(
-      process.cwd(),
-      ".sdlc",
-      "storycraft"
-    );
-
-  fs.mkdirSync(
-    storycraftPath,
-    {
-      recursive: true
-    }
-  );
-
-
-  const taskPath =
-    path.join(
-      storycraftPath,
-      "ai-task.md"
-    );
-
-
-  const responsePath =
-    path.join(
-      storycraftPath,
-      "ai-response.json"
-    );
-
-
-  /*
-   * Remove previous AI response.
-   *
-   * This is important because we do not
-   * want StoryCraft to accidentally process
-   * yesterday's AI response.
-   */
-
-  if (
-    fs.existsSync(
-      responsePath
-    )
-  ) {
-
-    fs.unlinkSync(
-      responsePath
-    );
-  }
-
-
-  const prompt =
-    buildVSCodeTask(
-      context,
-      hld
-    );
-
-
-  fs.writeFileSync(
-    taskPath,
-    prompt,
-    "utf8"
-  );
-
-
-  console.log(
-    "   ✓ AI task created:"
-  );
-
-  console.log(
-    "     .sdlc/storycraft/ai-task.md"
-  );
-
-  console.log("");
-
-  console.log(
-    "Open GitHub Copilot Chat or Claude in VS Code."
-  );
-
-  console.log("");
-
-  console.log(
-    "Give it this command:"
-  );
-
-  console.log("");
-
-  console.log(
-    "Run the StoryCraft task from .sdlc/storycraft/ai-task.md"
-  );
-
-  console.log("");
-
-  console.log(
-    "The AI must save ONLY the JSON result to:"
-  );
-
-  console.log("");
-
-  console.log(
-    ".sdlc/storycraft/ai-response.json"
-  );
-
-  console.log("");
-
-  console.log(
-    "After AI finishes, run:"
-  );
-
-  console.log("");
-
-  console.log(
-    "sdlc storycraft continue"
-  );
-
-  console.log("");
-}
-
-
-// ==================================================
-// COMPLETE GENERATED WORKFLOW
-// ==================================================
-
-async function completeGeneratedWorkflow(
-  generationResult: StoryGenerationResult,
-  generatedBy: string
-): Promise<void> {
-
-  console.log(
-    "7. Validating stories..."
-  );
-
-  const validationDocument = {
-    version:
-      "1.0",
-
-    generatedBy,
-
-    epics:
-      generationResult.epics,
-
-    stories:
-      generationResult.stories
-  };
-
-
-  const validationResult =
-    validateStoryDocument(
-      validationDocument
-    );
-
-
-  if (
-    !validationResult.passed
-  ) {
-
-    console.log(
-      "   ✗ Story document validation failed."
-    );
-
-    console.log("");
-
-    for (
-      const error
-      of validationResult.errors
-    ) {
-
-      console.log(
-        `   - ${error}`
-      );
-    }
-
-
-    if (
-      validationResult.warnings.length > 0
-    ) {
-
-      console.log("");
-
-      console.log(
-        "Warnings:"
-      );
-
-      for (
-        const warning
-        of validationResult.warnings
-      ) {
-
-        console.log(
-          `   ⚠ ${warning}`
-        );
-      }
-    }
-
-    console.log("");
-
-    throw new Error(
-      "Story validation failed. Human review was not started."
-    );
-  }
-
-
-  console.log(
-    "   ✓ Story document validation passed."
-  );
-
-
-  if (
-    validationResult.warnings.length > 0
-  ) {
-
-    console.log("");
-
-    for (
-      const warning
-      of validationResult.warnings
-    ) {
-
-      console.log(
-        `   ⚠ ${warning}`
-      );
-    }
-  }
-
-  console.log("");
-
-
-  /*
-   * Save stories.
-   */
-
-  console.log(
-    "8. Saving stories..."
-  );
-
-  saveGenerationResult(
-    generationResult,
-    generatedBy
-  );
-
-  console.log(
-    "   ✓ .sdlc/storycraft/stories.json"
-  );
-
-  console.log(
-    "   ✓ .sdlc/storycraft/story-graph.json"
-  );
-
-  console.log("");
-
-
-  /*
-   * Human review.
-   */
-
-  console.log(
-    "9. Starting human review..."
-  );
-
-  console.log("");
-
-  await reviewStories();
-
-  const review =
-    validateReview();
-
-
-  if (
-    !review.approved
-  ) {
-
-    console.log("");
-
-    console.log(
-      "Workflow stopped."
-    );
-
-    console.log(
-      "Stories were not approved."
-    );
-
-    console.log("");
-
-    return;
-  }
-
-
-  /*
-   * Jira.
-   */
-
-  const config =
-    loadConfig();
-
-
-  if (
-    !config.jira.enabled
-  ) {
-
-    console.log("");
-
-    console.log(
-      "Jira integration is disabled."
-    );
-
-    console.log("");
-
-    console.log(
-      "StoryCraft workflow completed."
-    );
-
-    console.log("");
-
-    return;
-  }
-
-
-  if (
-    !config.jira.project_key
-  ) {
-
-    throw new Error(
-      [
-        "Jira project is not configured.",
-        "",
-        "Run:",
-        "sdlc storycraft jira-setup"
-      ].join("\n")
-    );
-  }
-
-
-  console.log("");
-
-  console.log(
-    "10. Jira creation"
-  );
-
-  console.log("");
-
-  const createJira =
-    await confirm({
-      message:
-        `Create approved stories in Jira project ${config.jira.project_key}?`,
-      default:
-        true
-    });
-
-
-  if (
-    !createJira
-  ) {
-
-    console.log("");
-
-    console.log(
-      "Jira creation skipped."
-    );
-
-    console.log("");
-
-    return;
-  }
-
-
-  await runJiraWorkflow();
-
-
-  console.log("");
-
-  console.log(
-    "================================"
-  );
-
-  console.log(
-    "StoryCraft workflow completed."
-  );
-
-  console.log(
-    "Status: COMPLETED"
-  );
-
-  console.log(
-    "================================"
-  );
-
-  console.log("");
-}
-
-
-// ==================================================
-// OLD COMPLETE WORKFLOW
+// WORKFLOW (LEGACY ALIAS)
 // ==================================================
 
 export async function runStoryCraftWorkflow():
-  Promise<void> {
-
-  console.log("");
-
-  console.log(
-    "StoryCraft Developer Workflow"
-  );
-
-  console.log(
-    "============================="
-  );
-
-  console.log("");
-
-  const config =
-    loadConfig();
-
-
-  const mode =
-    getAIMode(
-      config
-    );
-
-
-  /*
-   * New workflow.
-   *
-   * This is now the preferred command.
-   */
-
-  if (
-    mode === "vscode" ||
-    mode === "direct"
-  ) {
-
-    await startStoryCraft();
-
-    return;
-  }
-
-
-  /*
-   * Fallback for old configuration.
-   */
-
-  await runStoryCraft();
-
-  console.log("");
-
-  console.log(
-    "Starting human review..."
-  );
-
-  console.log("");
-
-  await reviewStories();
-
-  const review =
-    validateReview();
-
-
-  if (
-    !review.approved
-  ) {
-
-    console.log("");
-
-    console.log(
-      "Workflow stopped because stories were not approved."
-    );
-
-    console.log("");
-
-    return;
-  }
-
-
-  await runJiraWorkflow();
-
-
-  console.log("");
-
-  console.log(
-    "Developer workflow completed."
-  );
-
-  console.log("");
+	Promise<void> {
+	await startStoryCraft();
 }
 
 
@@ -1746,778 +919,839 @@ export async function runStoryCraftWorkflow():
 // ==================================================
 
 export async function reviewStories():
-  Promise<void> {
-
-  const storiesPath =
-    path.join(
-      process.cwd(),
-      ".sdlc",
-      "storycraft",
-      "stories.json"
-    );
-
-
-  if (
-    !fs.existsSync(
-      storiesPath
-    )
-  ) {
-
-    console.log("");
-
-    console.log(
-      "stories.json not found."
-    );
-
-    console.log(
-      "Run: sdlc storycraft run"
-    );
-
-    console.log("");
-
-    return;
-  }
-
-
-  const content =
-    fs.readFileSync(
-      storiesPath,
-      "utf8"
-    );
-
-
-  const data =
-    JSON.parse(
-      content
-    );
-
-
-  if (
-    !Array.isArray(
-      data.stories
-    ) ||
-    data.stories.length === 0
-  ) {
-
-    console.log("");
-
-    console.log(
-      "No stories available for review."
-    );
-
-    console.log("");
-
-    return;
-  }
-
-
-  console.log("");
-
-  console.log(
-    "StoryCraft Human Review"
-  );
-
-  console.log(
-    "======================="
-  );
-
-  console.log("");
-
-
-  if (
-    Array.isArray(
-      data.epics
-    )
-  ) {
-
-    console.log(
-      `Epics: ${data.epics.length}`
-    );
-
-    console.log(
-      `Stories: ${data.stories.length}`
-    );
-
-    console.log("");
-  }
-
-
-  for (
-    const story
-    of data.stories
-  ) {
-
-    console.log(
-      `ID: ${story.id}`
-    );
-
-    console.log(
-      `Title: ${story.title}`
-    );
-
-    console.log(
-      `Description: ${story.description}`
-    );
-
-    console.log(
-      `Business Value: ${story.businessValue}`
-    );
-
-    console.log(
-      `Story Points: ${story.estimate.storyPoints}`
-    );
-
-
-    if (
-      Array.isArray(
-        story.technicalRequirements
-      )
-    ) {
-
-      console.log("");
-
-      console.log(
-        "Technical Requirements:"
-      );
-
-      for (
-        const requirement
-        of story.technicalRequirements
-      ) {
-
-        console.log(
-          `  - ${requirement}`
-        );
-      }
-    }
-
-
-    console.log("");
-
-    console.log(
-      "Acceptance Criteria:"
-    );
-
-
-    for (
-      const criterion
-      of story.acceptanceCriteria
-    ) {
-
-      console.log(
-        `  - ${criterion}`
-      );
-    }
-
-
-    if (
-      Array.isArray(
-        story.dependencies
-      ) &&
-      story.dependencies.length > 0
-    ) {
-
-      console.log("");
-
-      console.log(
-        "Dependencies:"
-      );
-
-      for (
-        const dependency
-        of story.dependencies
-      ) {
-
-        console.log(
-          `  - ${dependency}`
-        );
-      }
-    }
-
-
-    if (
-      Array.isArray(
-        story.hldReferences
-      ) &&
-      story.hldReferences.length > 0
-    ) {
-
-      console.log("");
-
-      console.log(
-        "HLD References:"
-      );
-
-      for (
-        const reference
-        of story.hldReferences
-      ) {
-
-        console.log(
-          `  - ${reference}`
-        );
-      }
-    }
-
-
-    console.log("");
-
-    console.log(
-      "-----------------------"
-    );
-
-    console.log("");
-  }
-
-
-  const approved =
-    await confirm({
-      message:
-        "Approve these stories?",
-      default:
-        false
-    });
-
-
-  const reviewPath =
-    path.join(
-      process.cwd(),
-      ".sdlc",
-      "storycraft",
-      "review.json"
-    );
-
-
-  const review = {
-    version:
-      "1.0",
-
-    status:
-      approved
-        ? "approved"
-        : "rejected",
-
-    reviewedAt:
-      new Date().toISOString(),
-
-    storiesFile:
-      "stories.json"
-  };
-
-
-  fs.writeFileSync(
-    reviewPath,
-    JSON.stringify(
-      review,
-      null,
-      2
-    ),
-    "utf8"
-  );
-
-
-  console.log("");
-
-
-  if (
-    approved
-  ) {
-
-    console.log(
-      "✓ Stories approved."
-    );
-
-  } else {
-
-    console.log(
-      "✗ Stories rejected."
-    );
-  }
-
-
-  console.log("");
-
-  console.log(
-    "Review result saved to .sdlc/storycraft/review.json"
-  );
-
-  console.log("");
+	Promise<void> {
+	const storiesPath =
+		getStoriesPath();
+
+	if (!fs.existsSync(storiesPath)) {
+		console.log("");
+		console.log(
+			"stories.json not found."
+		);
+		console.log("");
+		return;
+	}
+
+	const content =
+		fs.readFileSync(
+			storiesPath,
+			"utf8"
+		);
+
+	const data =
+		JSON.parse(content) as StoryCraftGenerationDocument;
+
+	console.log("");
+	console.log(
+		"StoryCraft Human Review"
+	);
+	console.log(
+		"======================="
+	);
+	console.log("");
+
+	console.log(
+		`Epics: ${data.epics.length}`
+	);
+	console.log(
+		`Stories: ${data.stories.length}`
+	);
+	console.log(
+		`Tasks: ${data.tasks.length}`
+	);
+	console.log("");
+
+	const approved =
+		await confirm({
+			message:
+				"Approve generated StoryCraft output?",
+			default:
+				false
+		});
+
+	const reviewPath =
+		path.join(
+			process.cwd(),
+			".sdlc",
+			"storycraft",
+			"review.json"
+		);
+
+	const review = {
+		version:
+			"1.0",
+		status:
+			approved
+				? "approved"
+				: "rejected",
+		reviewedAt:
+			new Date().toISOString(),
+		storiesFile:
+			"stories.json"
+	};
+
+	fs.writeFileSync(
+		reviewPath,
+		JSON.stringify(
+			review,
+			null,
+			2
+		),
+		"utf8"
+	);
+
+	const result =
+		validateReview();
+
+	console.log("");
+	console.log(result.message);
+	console.log(
+		"Review result saved to .sdlc/storycraft/review.json"
+	);
+	console.log("");
 }
 
 
 // ==================================================
-// GENERATION WORKFLOW
-// ==================================================
-
-async function executeGenerationWorkflow(
-  config: ReturnType<typeof loadConfig>
-): Promise<void> {
-
-  console.log(
-    "1. Loading context..."
-  );
-
-  const context =
-    loadContext();
-
-  console.log(
-    "   ✓ Context loaded"
-  );
-
-  console.log("");
-
-  console.log(
-    "2. Validating context..."
-  );
-
-  const contextResult =
-    validateContext(
-      context
-    );
-
-
-  if (
-    !contextResult.passed
-  ) {
-
-    console.log(
-      "   ✗ Context validation failed"
-    );
-
-    console.log("");
-
-    for (
-      const error
-      of contextResult.errors
-    ) {
-
-      console.log(
-        `   - ${error}`
-      );
-    }
-
-    console.log("");
-
-    return;
-  }
-
-
-  console.log(
-    "   ✓ Context validation passed"
-  );
-
-  console.log("");
-
-  console.log(
-    "3. Loading configuration..."
-  );
-
-  console.log(
-    `   ✓ AI Provider: ${config.ai.provider}`
-  );
-
-  console.log("");
-
-  console.log(
-    "3.5. Loading HLD..."
-  );
-
-
-  const hldProvider =
-    createHLDProvider(
-      config.resources.hld.provider
-    );
-
-
-  const hld =
-    await hldProvider.load();
-
-
-  console.log(
-    `   ✓ HLD loaded from: ${hldProvider.name}`
-  );
-
-  console.log("");
-
-
-  if (
-    getAIMode(config) ===
-    "vscode"
-  ) {
-
-    await prepareVSCodeWorkflow(
-      context,
-      hld
-    );
-
-    return;
-  }
-
-
-  console.log(
-    "4. Generating stories..."
-  );
-
-
-  const provider =
-    createAIProvider(
-      config.ai.provider
-    );
-
-
-  const generationResult =
-    await provider.generateStories({
-      context,
-      hld
-    });
-
-
-  console.log(
-    `   ✓ Generated ${generationResult.epics.length} epic(s)`
-  );
-
-  console.log(
-    `   ✓ Generated ${generationResult.stories.length} story(s)`
-  );
-
-  console.log("");
-
-
-  await completeGeneratedWorkflow(
-    generationResult,
-    provider.name
-  );
-}
-
-
-// ==================================================
-// SAVE GENERATION RESULT
+// HELPER: SAVE GENERATION
 // ==================================================
 
 function saveGenerationResult(
-  generationResult: StoryGenerationResult,
-  generatedBy: string
+	generationResult: StoryGenerationResult,
+	generatedBy: string
 ): void {
 
-  const storycraftPath =
-    path.join(
-      process.cwd(),
-      ".sdlc",
-      "storycraft"
-    );
+	const storycraftPath =
+		path.join(
+			process.cwd(),
+			".sdlc",
+			"storycraft"
+		);
 
+	fs.mkdirSync(
+		storycraftPath,
+		{
+			recursive: true
+		}
+	);
 
-  fs.mkdirSync(
-    storycraftPath,
-    {
-      recursive: true
-    }
-  );
+	const output =
+		toGenerationDocument(
+			generationResult,
+			generatedBy
+		);
 
+	fs.writeFileSync(
+		getStoriesPath(),
+		JSON.stringify(
+			output,
+			null,
+			2
+		),
+		"utf8"
+	);
 
-  const output = {
-    version:
-      "1.0",
+	const graph =
+		buildStoryGraph(
+			generationResult.stories
+		);
 
-    generatedBy,
-
-    epics:
-      generationResult.epics,
-
-    stories:
-      generationResult.stories
-  };
-
-
-  const storiesPath =
-    path.join(
-      storycraftPath,
-      "stories.json"
-    );
-
-
-  fs.writeFileSync(
-    storiesPath,
-    JSON.stringify(
-      output,
-      null,
-      2
-    ),
-    "utf8"
-  );
-
-
-  const graph =
-    buildStoryGraph(
-      generationResult.stories
-    );
-
-
-  const graphPath =
-    path.join(
-      storycraftPath,
-      "story-graph.json"
-    );
-
-
-  fs.writeFileSync(
-    graphPath,
-    JSON.stringify(
-      graph,
-      null,
-      2
-    ),
-    "utf8"
-  );
+	fs.writeFileSync(
+		path.join(
+			storycraftPath,
+			"story-graph.json"
+		),
+		JSON.stringify(
+			graph,
+			null,
+			2
+		),
+		"utf8"
+	);
 }
 
 
 // ==================================================
-// AI MODE
+// HELPER: DOCUMENT
 // ==================================================
 
-function getAIMode(
-  config: ReturnType<typeof loadConfig>
-): "vscode" | "direct" {
-
-  const ai =
-    config.ai as
-    typeof config.ai & {
-      mode?: string;
-    };
-
-
-  if (
-    ai.mode ===
-    "direct"
-  ) {
-
-    return "direct";
-  }
-
-
-  /*
-   * Default to VS Code.
-   *
-   * This is intentional because StoryCraft
-   * is designed to work with Copilot/Claude
-   * inside the developer's IDE.
-   */
-
-  return "vscode";
+function toGenerationDocument(
+	generationResult: StoryGenerationResult,
+	generatedBy: string
+): StoryCraftGenerationDocument {
+	return {
+		version:
+			"1.0",
+		generatedBy,
+		epics:
+			generationResult.epics,
+		stories:
+			generationResult.stories,
+		tasks:
+			generationResult.tasks
+	};
 }
 
 
 // ==================================================
-// VS CODE TASK
+// HELPER: SUMMARY
 // ==================================================
 
-function buildVSCodeTask(
-  context: ReturnType<typeof loadContext>,
-  hld: {
-    source: string;
-    content: string;
-  }
+function printGenerationSummary(
+	projectName: string,
+	hldSource: string,
+	document: StoryCraftGenerationDocument
+): void {
+	console.log(
+		"StoryCraft Generation Summary"
+	);
+	console.log("");
+	console.log(
+		`Project: ${projectName}`
+	);
+	console.log(
+		`HLD: ${hldSource}`
+	);
+	console.log(
+		`Epics: ${document.epics.length}`
+	);
+	console.log(
+		`Stories: ${document.stories.length}`
+	);
+	console.log(
+		`Tasks: ${document.tasks.length}`
+	);
+	console.log("");
+
+	for (
+		const epic
+		of document.epics
+	) {
+		console.log(
+			`${epic.id} ${epic.title}`
+		);
+
+		const stories =
+			document.stories.filter(
+				(
+					story
+				) =>
+					story.epicId === epic.id
+			);
+
+		for (
+			const story
+			of stories
+		) {
+			console.log(
+				`  ${story.id} ${story.title}`
+			);
+
+			const tasks =
+				document.tasks.filter(
+					(
+						task
+					) =>
+						task.storyId === story.id
+				);
+
+			for (
+				const task
+				of tasks
+			) {
+				console.log(
+					`    ${task.id} ${task.title}`
+				);
+			}
+		}
+
+		console.log("");
+	}
+}
+
+
+// ==================================================
+// HELPER: APPROVAL
+// ==================================================
+
+async function askForCreationApproval():
+	Promise<boolean> {
+	while (true) {
+		const answer =
+			(
+				await input({
+					message:
+						"Create these Epics, Stories and Tasks in Jira? (y/n)",
+					default:
+						"n"
+				})
+			)
+				.trim()
+				.toLowerCase();
+
+		if (answer === "y") {
+			return true;
+		}
+
+		if (answer === "n") {
+			return false;
+		}
+
+		console.log(
+			"Please answer with 'y' or 'n'."
+		);
+	}
+}
+
+
+// ==================================================
+// HELPER: JIRA CREATION
+// ==================================================
+
+async function createInJira(
+	providerName: string,
+	projectKey: string,
+	document: StoryCraftGenerationDocument
+): Promise<void> {
+
+	const resultPath =
+		path.join(
+			process.cwd(),
+			".sdlc",
+			"storycraft",
+			"jira-result.json"
+		);
+
+	if (fs.existsSync(resultPath)) {
+		const existing =
+			JSON.parse(
+				fs.readFileSync(
+					resultPath,
+					"utf8"
+				)
+			) as JiraCreationResult;
+
+		if (
+			existing.status === "completed" &&
+			existing.projectKey === projectKey
+		) {
+			throw new Error(
+				"Jira creation was already completed for this project. Remove .sdlc/storycraft/jira-result.json only if you explicitly want to rerun."
+			);
+		}
+	}
+
+	const jira =
+		createJiraProvider(
+			providerName
+		);
+
+	const result: JiraCreationResult = {
+		version:
+			"1.0",
+		status:
+			"in_progress",
+		projectKey,
+		createdAt:
+			new Date().toISOString(),
+		epics:
+			[],
+		stories:
+			[],
+		tasks:
+			[],
+		errors:
+			[]
+	};
+
+	writeJiraResult(
+		resultPath,
+		result
+	);
+
+	const epicKeyByStoryCraftId =
+		new Map<string, string>();
+
+	const storyKeyByStoryCraftId =
+		new Map<string, string>();
+
+	try {
+		console.log("");
+		console.log("Creating Jira Epics...");
+
+		for (
+			const epic
+			of document.epics
+		) {
+			const createdEpic =
+				await jira.createEpic(
+					projectKey,
+					epic.title,
+					epic.description
+				);
+
+			result.epics.push({
+				storyCraftId:
+					epic.id,
+				jiraKey:
+					createdEpic.key
+			});
+
+			epicKeyByStoryCraftId.set(
+				epic.id,
+				createdEpic.key
+			);
+
+			writeJiraResult(
+				resultPath,
+				result
+			);
+
+			console.log(
+				`✓ ${createdEpic.key}`
+			);
+		}
+
+		console.log("");
+		console.log("Creating Jira Stories...");
+
+		for (
+			const story
+			of document.stories
+		) {
+			const jiraEpicKey =
+				epicKeyByStoryCraftId.get(
+					story.epicId
+				);
+
+			if (!jiraEpicKey) {
+				throw new Error(
+					`Cannot create story ${story.id}. Epic ${story.epicId} was not created.`
+				);
+			}
+
+			const createdStory =
+				await jira.createStory(
+					projectKey,
+					jiraEpicKey,
+					story.title,
+					buildJiraStoryDescription(
+						story
+					)
+				);
+
+			result.stories.push({
+				storyCraftId:
+					story.id,
+				jiraKey:
+					createdStory.key
+			});
+
+			storyKeyByStoryCraftId.set(
+				story.id,
+				createdStory.key
+			);
+
+			writeJiraResult(
+				resultPath,
+				result
+			);
+
+			console.log(
+				`✓ ${createdStory.key}`
+			);
+		}
+
+		console.log("");
+		console.log("Creating Jira Tasks...");
+
+		for (
+			const task
+			of document.tasks
+		) {
+			const jiraStoryKey =
+				storyKeyByStoryCraftId.get(
+					task.storyId
+				);
+
+			if (!jiraStoryKey) {
+				throw new Error(
+					`Cannot create task ${task.id}. Story ${task.storyId} was not created.`
+				);
+			}
+
+			const createdTask =
+				await jira.createTask(
+					projectKey,
+					jiraStoryKey,
+					task.title,
+					buildJiraTaskDescription(
+						task
+					)
+				);
+
+			result.tasks.push({
+				storyCraftId:
+					task.id,
+				jiraKey:
+					createdTask.key
+			});
+
+			writeJiraResult(
+				resultPath,
+				result
+			);
+
+			console.log(
+				`✓ ${createdTask.key}`
+			);
+		}
+
+		result.status =
+			"completed";
+		result.completedAt =
+			new Date().toISOString();
+		writeJiraResult(
+			resultPath,
+			result
+		);
+
+	} catch (error) {
+		result.status =
+			"failed";
+		result.completedAt =
+			new Date().toISOString();
+
+		result.errors.push(
+			error instanceof Error
+				? error.message
+				: String(error)
+		);
+
+		writeJiraResult(
+			resultPath,
+			result
+		);
+
+		throw new Error(
+			[
+				"Jira creation failed.",
+				`Created so far: ${result.epics.length} epics, ${result.stories.length} stories, ${result.tasks.length} tasks.`,
+				"See .sdlc/storycraft/jira-result.json"
+			].join("\n")
+		);
+	}
+}
+
+
+// ==================================================
+// HELPER: JIRA RESULT
+// ==================================================
+
+function writeJiraResult(
+	resultPath: string,
+	result: JiraCreationResult
+): void {
+	fs.writeFileSync(
+		resultPath,
+		JSON.stringify(
+			result,
+			null,
+			2
+		),
+		"utf8"
+	);
+}
+
+
+// ==================================================
+// HELPER: JIRA DESCRIPTION
+// ==================================================
+
+function buildJiraStoryDescription(
+	story: {
+		id: string;
+		description: string;
+		businessValue: string;
+		acceptanceCriteria: string[];
+		technicalRequirements: string[];
+		dependencies: string[];
+		hldReferences: string[];
+		estimate: {
+			storyPoints: number;
+		};
+	}
 ): string {
+	const acceptanceCriteria =
+		story.acceptanceCriteria
+			.map(
+				(
+					criterion
+				) =>
+					`- ${criterion}`
+			)
+			.join("\n");
 
-  return `# StoryCraft AI Developer Task
+	const technicalRequirements =
+		story.technicalRequirements
+			.map(
+				(
+					requirement
+				) =>
+					`- ${requirement}`
+			)
+			.join("\n");
 
-You are the AI execution engine for StoryCraft.
+	const dependencies =
+		story.dependencies.length > 0
+			? story.dependencies
+					.map(
+						(
+							dependency
+						) =>
+							`- ${dependency}`
+					)
+					.join("\n")
+			: "- None";
 
-You are operating inside the developer's existing software project.
+	const hldReferences =
+		story.hldReferences.length > 0
+			? story.hldReferences
+					.map(
+						(
+							reference
+						) =>
+							`- ${reference}`
+					)
+					.join("\n")
+			: "- None";
 
-Your job is to transform the project's actual SDLC context and HLD into production-ready Epics and User Stories.
-
-IMPORTANT:
-
-The supplied context and HLD are the source of truth.
-
-DO NOT invent requirements.
-
-DO NOT create generic demo stories.
-
-DO NOT create fake example domains such as:
-- Order API
-- Product API
-- User API
-- Authentication API
-
-unless those requirements actually exist in the supplied project context.
-
----
-
-# EXECUTION PROCESS
-
-Follow these steps:
-
-1. Read the StoryCraft context.
-2. Understand the actual business problem.
-3. Understand the actual proposed solution.
-4. Understand the actual HLD.
-5. Identify real business capabilities.
-6. Group capabilities into Epics.
-7. Break Epics into implementation-ready User Stories.
-8. Ensure every Story belongs to an Epic.
-9. Add meaningful acceptance criteria.
-10. Add technical requirements where supported.
-11. Identify Story dependencies.
-12. Reference the actual HLD.
-13. Estimate Story Points from 1 to 13.
-14. Do not duplicate Stories.
-15. Do not create unsupported functionality.
-16. Respect security and non-functional requirements.
-17. Keep MVP requirements separate from future ideas.
-18. Return only the requested JSON structure.
-
----
-
-# STORY QUALITY RULES
-
-Every Story must be:
-
-- understandable by a Product Owner
-- implementable by a developer
-- testable by QA
-- traceable to the HLD
-- connected to a real business capability
-
-Avoid:
-
-- vague stories
-- placeholder stories
-- generic CRUD stories
-- invented APIs
-- invented integrations
-- invented databases
-- invented business rules
-
----
-
-# REQUIRED OUTPUT
-
-Return ONLY valid JSON.
-
-Do not use markdown fences.
-
-Use exactly this structure:
-
-{
-  "version": "1.0",
-  "generatedBy": "vscode-ai",
-  "epics": [
-    {
-      "id": "EPIC-001",
-      "title": "...",
-      "description": "...",
-      "businessValue": "..."
-    }
-  ],
-  "stories": [
-    {
-      "id": "ST-001",
-      "epicId": "EPIC-001",
-      "title": "...",
-      "description": "...",
-      "businessValue": "...",
-      "acceptanceCriteria": [
-        "..."
-      ],
-      "technicalRequirements": [
-        "..."
-      ],
-      "dependencies": [],
-      "hldReferences": [
-        "..."
-      ],
-      "estimate": {
-        "storyPoints": 5
-      }
-    }
-  ]
+	return `StoryCraft ID: ${story.id}\n\nDescription:\n${story.description}\n\nBusiness Value:\n${story.businessValue}\n\nAcceptance Criteria:\n${acceptanceCriteria}\n\nTechnical Requirements:\n${technicalRequirements}\n\nDependencies:\n${dependencies}\n\nHLD References:\n${hldReferences}\n\nStory Points: ${story.estimate.storyPoints}`;
 }
 
----
+function buildJiraTaskDescription(
+	task: {
+		id: string;
+		description: string;
+		technicalDetails: string[];
+		dependencies: string[];
+		estimate: {
+			hours: number;
+		};
+	}
+): string {
+	const technicalDetails =
+		task.technicalDetails
+			.map(
+				(
+					detail
+				) =>
+					`- ${detail}`
+			)
+			.join("\n");
 
-# STORYCRAFT CONTEXT
+	const dependencies =
+		task.dependencies.length > 0
+			? task.dependencies
+					.map(
+						(
+							dependency
+						) =>
+							`- ${dependency}`
+					)
+					.join("\n")
+			: "- None";
 
-## Problem Discovery
-
-${JSON.stringify(
-    context.problem,
-    null,
-    2
-  )}
-
----
-
-## Solution Discovery
-
-${JSON.stringify(
-    context.solution,
-    null,
-    2
-  )}
-
----
-
-# HIGH LEVEL DESIGN
-
-HLD Source:
-
-${hld.source}
-
-HLD Content:
-
-${hld.content}
-
----
-
-# FINAL INSTRUCTION
-
-Generate the complete production-ready StoryCraft Epics and Stories.
-
-Use the actual project requirements.
-
-Do not invent requirements.
-
-Return ONLY JSON.
-
-Save the final JSON result to:
-
-.sdlc/storycraft/ai-response.json
-`;
+	return `StoryCraft ID: ${task.id}\n\nDescription:\n${task.description}\n\nTechnical Details:\n${technicalDetails}\n\nDependencies:\n${dependencies}\n\nEstimate (hours): ${task.estimate.hours}`;
 }
 
 
 // ==================================================
-// COPILOT INSTRUCTIONS
+// HELPER: COPILOT FILES
 // ==================================================
+
+function createCopilotFiles(
+	projectRoot: string
+): void {
+	const githubDirectory =
+		path.join(
+			projectRoot,
+			".github"
+		);
+
+	const promptsDirectory =
+		path.join(
+			githubDirectory,
+			"prompts"
+		);
+
+	fs.mkdirSync(
+		promptsDirectory,
+		{
+			recursive: true
+		}
+	);
+
+	const copilotInstructionsPath =
+		path.join(
+			githubDirectory,
+			"copilot-instructions.md"
+		);
+
+	if (!fs.existsSync(copilotInstructionsPath)) {
+		fs.writeFileSync(
+			copilotInstructionsPath,
+			createCopilotInstructions(),
+			"utf8"
+		);
+	}
+
+	const promptPath =
+		path.join(
+			promptsDirectory,
+			"sdlc-storycraft-start.prompt.md"
+		);
+
+	if (!fs.existsSync(promptPath)) {
+		fs.writeFileSync(
+			promptPath,
+			createSlashPromptFile(),
+			"utf8"
+		);
+	}
+
+	const aliasPromptPath =
+		path.join(
+			promptsDirectory,
+			"sdlc-start-workflow.prompt.md"
+		);
+
+	if (!fs.existsSync(aliasPromptPath)) {
+		fs.writeFileSync(
+			aliasPromptPath,
+			createSlashPromptFile(),
+			"utf8"
+		);
+	}
+}
+
 
 function createCopilotInstructions():
-  string {
+	string {
 
-  return `# StoryCraft
+	return `# StoryCraft Developer Instructions
 
-This project uses StoryCraft for developer-driven SDLC automation.
+This project uses StoryCraft SDLC automation.
 
-When the developer asks you to execute StoryCraft:
+Primary workflow:
 
-1. Read .sdlc/storycraft/ai-task.md
-2. Read the referenced project context.
-3. Read the HLD.
-4. Follow the StoryCraft task exactly.
-5. Do not invent requirements.
-6. Do not generate generic example stories.
-7. Generate implementation-ready Epics and Stories.
-8. Return only valid JSON.
-9. Save the final result to:
-
-.sdlc/storycraft/ai-response.json
-
-Do not modify the StoryCraft output format.
-
-Human approval is required before Jira creation.
+1. Run /sdlc-storycraft-start in Copilot Chat.
+2. Execute the StoryCraft CLI workflow.
+3. Keep generation grounded in real project context and HLD.
+4. Do not invent unrelated demo requirements.
+5. Never create Jira items without explicit human approval.
 `;
+}
+
+
+function createSlashPromptFile():
+	string {
+
+	return `---
+mode: agent
+description: Start the StoryCraft SDLC workflow
+---
+
+Run the StoryCraft workflow for this project now.
+
+Steps:
+
+1. Run: sdlc storycraft start
+2. Follow the interactive prompts.
+3. Do not bypass human approval before Jira creation.
+4. If creation is rejected, stop without creating Jira items.
+`;
+}
+
+
+function createStoryCraftEnvTemplate(
+	projectRoot: string
+): void {
+	const envTemplatePath =
+		path.join(
+			projectRoot,
+			".env.storycraft.example"
+		);
+
+	if (fs.existsSync(envTemplatePath)) {
+		return;
+	}
+
+	fs.writeFileSync(
+		envTemplatePath,
+		createEnvTemplateContent(),
+		"utf8"
+	);
+}
+
+
+function createEnvTemplateContent():
+	string {
+
+	return `# StoryCraft integration environment variables
+# Copy this file to .env and update with your real values.
+
+# Jira
+export JIRA_BASE_URL="https://your-company.atlassian.net"
+export JIRA_EMAIL="your-email@company.com"
+export JIRA_API_TOKEN="your-jira-api-token"
+
+# Confluence
+export CONFLUENCE_BASE_URL="https://your-company.atlassian.net"
+export CONFLUENCE_EMAIL="your-email@company.com"
+export CONFLUENCE_API_TOKEN="your-confluence-api-token"
+export CONFLUENCE_HLD_PAGE_ID="your-confluence-hld-page-id"
+`;
+}
+
+
+// ==================================================
+// HELPER: CONTEXT WITH LOADED HLD
+// ==================================================
+
+function withLoadedHld(
+	context: StoryCraftContext,
+	source: string,
+	content: string
+): StoryCraftContext {
+	return {
+		...context,
+		hld: {
+			source,
+			exists: true,
+			available: true,
+			isPlaceholder: false,
+			data: {
+				source,
+				content
+			}
+		}
+	};
+}
+
+
+// ==================================================
+// HELPER: PATHS
+// ==================================================
+
+function getStoriesPath():
+	string {
+	return path.join(
+		process.cwd(),
+		".sdlc",
+		"storycraft",
+		"stories.json"
+	);
 }
 
 
@@ -2526,38 +1760,15 @@ Human approval is required before Jira creation.
 // ==================================================
 
 function escapeYaml(
-  value: string
+	value: string
 ): string {
-
-  return value
-    .replace(
-      /\\/g,
-      "\\\\"
-    )
-    .replace(
-      /"/g,
-      '\\"'
-    );
-}
-
-
-// ==================================================
-// OBJECT CHECK
-// ==================================================
-
-function isObject(
-  value: unknown
-): value is Record<
-  string,
-  any
-> {
-
-  return (
-    typeof value ===
-    "object" &&
-    value !== null &&
-    !Array.isArray(
-      value
-    )
-  );
+	return value
+		.replace(
+			/\\/g,
+			"\\\\"
+		)
+		.replace(
+			/"/g,
+			'\\"'
+		);
 }

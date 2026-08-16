@@ -123,6 +123,7 @@ export function readVSCodeAIResult():
             generatedBy?: string;
             epics?: unknown;
             stories?: unknown;
+            tasks?: unknown;
         };
 
     if (
@@ -145,11 +146,24 @@ export function readVSCodeAIResult():
         );
     }
 
+    if (
+        !Array.isArray(
+            result.tasks
+        )
+    ) {
+        throw new Error(
+            "StoryCraft AI response is missing 'tasks'."
+        );
+    }
+
     return {
         epics:
             result.epics as StoryGenerationResult["epics"],
 
         stories:
-            result.stories as StoryGenerationResult["stories"]
+            result.stories as StoryGenerationResult["stories"],
+
+        tasks:
+            result.tasks as StoryGenerationResult["tasks"]
     };
 }
