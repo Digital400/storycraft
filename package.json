@@ -1,0 +1,33 @@
+{
+  "name": "storycraft",
+  "version": "1.0.0",
+  "description": "Digital400 (Pvt) Ltd SDLC StoryCraft CLI",
+  "main": "index.js",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "dev": "tsx src/index.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
+    "@inquirer/prompts": "^8.5.2",
+    "commander": "^15.0.0",
+    "yaml": "^2.9.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true
+  },
+  "bin": {
+    "sdlc": "dist/index.js"
+  }
+}
