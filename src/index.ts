@@ -57,6 +57,29 @@ program
   .version("1.0.0");
 
 
+// ==================================================
+// ROOT INSTALL (NPX-FRIENDLY)
+// ==================================================
+
+program
+  .command("install")
+  .description(
+    "Install StoryCraft into the current project"
+  )
+  .action(async () => {
+    try {
+      await initStoryCraft({
+        nonInteractive: true
+      });
+    } catch (error) {
+      printError(
+        error,
+        "StoryCraft installation failed."
+      );
+    }
+  });
+
+
 const storycraft =
   program
     .command("storycraft")

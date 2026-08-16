@@ -80,8 +80,11 @@ interface JiraCreationResult {
 // INIT
 // ==================================================
 
-export async function initStoryCraft():
-	Promise<void> {
+export async function initStoryCraft(
+	options?: {
+		nonInteractive?: boolean;
+	}
+): Promise<void> {
 
 	const projectRoot =
 		process.cwd();
@@ -133,25 +136,27 @@ export async function initStoryCraft():
 		);
 
 	if (!fs.existsSync(configPath)) {
-		projectName =
-			await input({
-				message:
-					"Project name:",
-				default:
-					projectName,
-				validate:
-					(
-						value
-					) => {
-						if (!value.trim()) {
-							return (
-								"Project name is required."
-							);
-						}
+		if (!options?.nonInteractive) {
+			projectName =
+				await input({
+					message:
+						"Project name:",
+					default:
+						projectName,
+					validate:
+						(
+							value
+						) => {
+							if (!value.trim()) {
+								return (
+									"Project name is required."
+								);
+							}
 
-						return true;
-					}
-			});
+							return true;
+						}
+				});
+		}
 
 		const config = [
 			"project:",
