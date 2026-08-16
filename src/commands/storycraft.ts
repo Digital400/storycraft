@@ -173,8 +173,8 @@ export async function initStoryCraft(
 			"  space_key: \"\"",
 			"",
 			"ai:",
-			"  provider: \"claude\"",
-			"  mode: \"direct\"",
+			"  provider: \"vscode\"",
+			"  mode: \"vscode\"",
 			"",
 			"resources:",
 			"  hld:",
@@ -249,7 +249,7 @@ export async function initStoryCraft(
 	);
 	console.log("");
 	console.log(
-		"Next: copy .env.storycraft.example to .env and set your Jira/Confluence/AI values."
+		"Next: copy .env.storycraft.example to .env and set your Jira/Confluence values."
 	);
 	console.log("");
 }
@@ -838,38 +838,11 @@ export async function startStoryCraft():
 			console.log("");
 			console.log(error.message);
 			console.log("");
-
-			const useMockFallback =
-				await confirm({
-					message:
-						"No AI response file found yet. Continue now with mock AI output?",
-					default:
-						true
-				});
-
-			if (!useMockFallback) {
-				console.log("");
-				console.log(
-					"Workflow paused. After creating .sdlc/storycraft/ai-response.json, run 'sdlc storycraft start' again."
-				);
-				console.log("");
-				return;
-			}
-
-			provider =
-				createAIProvider(
-					"mock",
-					"direct"
-				);
-
-			providerName =
-				provider.name;
-
-			generationResult =
-				await provider.generateStories({
-					context,
-					hld
-				});
+			console.log(
+				"Workflow paused. Generate real AI output in Copilot Chat and save it to .sdlc/storycraft/ai-response.json, then run 'sdlc storycraft start' again."
+			);
+			console.log("");
+			return;
 		} else {
 			throw error;
 		}

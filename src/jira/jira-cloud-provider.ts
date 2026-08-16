@@ -139,17 +139,41 @@ export class JiraCloudProvider implements JiraProvider {
         title: string,
         description: string
     ): Promise<JiraTask> {
-        return this.createIssueWithFallback<JiraTask>(
-            ["Task"],
-            projectKey,
-            title,
-            description,
-            storyKey,
-            (created) => ({
-                id: created.id,
-                key: created.key,
-                title
-            })
+        const attempts: Array<{
+            issueType: string;
+            parentKey?: string;
+        }> = [
+            { issueType: "Sub-task", parentKey: storyKey },
+            { issueType: "Subtask", parentKey: storyKey },
+            { issueType: "Task" }
+        ];
+
+        const failures: string[] = [];
+
+        for (const attempt of attempts) {
+            try {
+                const created = await this.createIssue(
+                    attempt.issueType,
+                    projectKey,
+                    title,
+                    description,
+                    attempt.parentKey
+                );
+
+                return {
+                    id: created.id,
+                    key: created.key,
+                    title
+                };
+            } catch (error) {
+                failures.push(
+                    `${attempt.issueType}: ${error instanceof Error ? error.message : String(error)}`
+                );
+            }
+        }
+
+        throw new Error(
+            `Jira task creation failed. Tried Sub-task, Subtask, Task. ${failures.join(" | ")}`
         );
     }
 
