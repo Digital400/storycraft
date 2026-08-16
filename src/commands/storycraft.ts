@@ -773,11 +773,14 @@ export async function startStoryCraft():
 		"Generating Epics, Stories and Tasks..."
 	);
 
-	const provider =
+	let provider =
 		createAIProvider(
 			config.ai.provider,
 			config.ai.mode
 		);
+
+	let providerName =
+		provider.name;
 
 	let generationResult: StoryGenerationResult;
 
@@ -827,13 +830,55 @@ export async function startStoryCraft():
 			);
 		}
 
-		throw error;
+		if (
+			error instanceof Error &&
+			config.ai.mode === "vscode" &&
+			error.message.includes("VS Code AI handoff created.")
+		) {
+			console.log("");
+			console.log(error.message);
+			console.log("");
+
+			const useMockFallback =
+				await confirm({
+					message:
+						"No AI response file found yet. Continue now with mock AI output?",
+					default:
+						true
+				});
+
+			if (!useMockFallback) {
+				console.log("");
+				console.log(
+					"Workflow paused. After creating .sdlc/storycraft/ai-response.json, run 'sdlc storycraft start' again."
+				);
+				console.log("");
+				return;
+			}
+
+			provider =
+				createAIProvider(
+					"mock",
+					"direct"
+				);
+
+			providerName =
+				provider.name;
+
+			generationResult =
+				await provider.generateStories({
+					context,
+					hld
+				});
+		} else {
+			throw error;
+		}
 	}
 
 	const document =
 		toGenerationDocument(
 			generationResult,
-			provider.name
+			providerName
 		);
 
 	console.log(
@@ -882,7 +927,7 @@ export async function startStoryCraft():
 
 	saveGenerationResult(
 		generationResult,
-		provider.name
+		providerName
 	);
 
 	console.log("");

@@ -117,7 +117,7 @@ export class VSCodeAIProvider
                 ".sdlc/storycraft/ai-response.json",
                 "",
                 "Then run:",
-                "sdlc storycraft generate"
+                "sdlc storycraft start"
             ].join("\n")
         );
     }
